@@ -99,13 +99,7 @@ describe("messagesFromEvents", () => {
     ];
 
     const messages = messagesFromEvents(events);
-    expect(messages.map((m) => m.id)).toEqual([
-      "u1",
-      "a1",
-      "t1",
-      "u3",
-      "a3",
-    ]);
+    expect(messages.map((m) => m.id)).toEqual(["u1", "a1", "t1", "u3", "a3"]);
   });
 
   it("includes the latest event's output when not yet folded into a later input", () => {
