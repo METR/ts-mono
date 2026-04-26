@@ -74,10 +74,10 @@ describe("messagesFromEvents", () => {
   });
 
   it("preserves conversation order when later events have new tool/user messages", () => {
-    // Mirrors the live bug scenario: an intermediate model event's output
-    // is not folded into the next event's input, so the buggy algorithm
-    // hoists later tool/user messages to the end instead of slotting them
-    // into their correct conversation positions.
+    // Mirrors the live bug scenario: walking events in stream order with a
+    // Map keyed by id keeps original insertion positions, hoisting later
+    // tool/user messages to the end instead of slotting them between the
+    // assistants that produced them.
     const events = [
       makeModelEvent({
         input: [userMsg("u1")],
@@ -99,13 +99,13 @@ describe("messagesFromEvents", () => {
     ];
 
     const messages = messagesFromEvents(events);
-    const ids = messages.map((m) => m.id);
-
-    // tool1 must immediately follow asst1 (its tool_calls owner), and u3
-    // must come after tool1 — never hoisted past asst3.
-    expect(ids.indexOf("t1")).toBe(ids.indexOf("a1") + 1);
-    expect(ids.indexOf("u3")).toBeGreaterThan(ids.indexOf("t1"));
-    expect(ids.indexOf("u3")).toBeLessThan(ids.indexOf("a3"));
+    expect(messages.map((m) => m.id)).toEqual([
+      "u1",
+      "a1",
+      "t1",
+      "u3",
+      "a3",
+    ]);
   });
 
   it("includes the latest event's output when not yet folded into a later input", () => {
@@ -117,5 +117,25 @@ describe("messagesFromEvents", () => {
     ];
     const messages = messagesFromEvents(events);
     expect(messages.map((m) => m.id)).toEqual(["u1", "a1"]);
+  });
+
+  it("returns [] for an empty event stream", () => {
+    expect(messagesFromEvents([])).toEqual([]);
+  });
+
+  it("returns [] when every model event has an error", () => {
+    const events = [
+      makeModelEvent({
+        error: "429 rate limit",
+        inputId: "msg-1",
+        outputId: "msg-err-1",
+      }),
+      makeModelEvent({
+        error: "500 server error",
+        inputId: "msg-1",
+        outputId: "msg-err-2",
+      }),
+    ];
+    expect(messagesFromEvents(events)).toEqual([]);
   });
 });
