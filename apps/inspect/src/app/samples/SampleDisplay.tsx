@@ -141,13 +141,9 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
   // whether running or not
   const sampleEvents = sample?.events || runningSampleData;
   const sampleMessages = useMemo(() => {
-    if (sample?.messages) {
-      return sample.messages;
-    } else if (runningSampleData) {
-      return messagesFromEvents(runningSampleData);
-    } else {
-      return [];
-    }
+    if (sample?.messages) return sample.messages;
+    if (runningSampleData) return messagesFromEvents(runningSampleData);
+    return [];
   }, [sample?.messages, runningSampleData]);
 
   const hasSampleData =

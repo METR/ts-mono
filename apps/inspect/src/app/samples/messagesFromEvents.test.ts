@@ -4,6 +4,15 @@ import type { ChatMessage, Event } from "@tsmono/inspect-common/types";
 
 import { messagesFromEvents } from "./messagesFromEvents";
 
+const makeCompactionEvent = (): Event =>
+  ({
+    event: "compaction",
+    type: "summary",
+    tokens_before: null,
+    tokens_after: null,
+    source: null,
+  }) as unknown as Event;
+
 const makeModelEvent = (opts: {
   error?: string;
   input?: ChatMessage[];
@@ -190,6 +199,37 @@ describe("messagesFromEvents", () => {
       "u1",
       "a1",
       "t1",
+      "a2",
+    ]);
+  });
+
+  it("uses a compaction event to trigger a full walk for edit-style compaction", () => {
+    // Edit-style compaction reassigns ids for replaced messages but
+    // keeps the input length and the last message id stable, which
+    // would otherwise fool the skip-prefix heuristic. The CompactionEvent
+    // between the two model events forces a full walk so the replaced
+    // message gets surfaced.
+    const events: Event[] = [
+      makeModelEvent({
+        input: [userMsg("u1"), userMsg("u2"), userMsg("u3")],
+        outputId: "a1",
+      }),
+      makeCompactionEvent(),
+      makeModelEvent({
+        input: [userMsg("u1"), userMsg("u2-edited"), userMsg("u3")],
+        outputId: "a2",
+      }),
+    ];
+
+    const messages = messagesFromEvents(events);
+    // The full walk inserts u2-edited between u1 and the still-present
+    // u2 (the algorithm appends; it does not remove obsolete ids).
+    expect(messages.map((m) => m.id)).toEqual([
+      "u1",
+      "u2-edited",
+      "u2",
+      "u3",
+      "a1",
       "a2",
     ]);
   });
