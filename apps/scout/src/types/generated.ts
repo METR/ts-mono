@@ -675,6 +675,49 @@ export interface components {
             };
         };
         /**
+         * AdaptiveConcurrency
+         * @description Bounds and tuning for an adaptive concurrency controller.
+         *
+         *     Basic fields (`min`, `start`, `max`) bound the range the controller will
+         *     scale within. Advanced fields (`cooldown_seconds`, `decrease_factor`,
+         *     `scale_up_percent`) tune the response curve and have sensible defaults
+         *     for typical evaluation workloads — see the parallelism docs for guidance.
+         *     Accepts a string shorthand ("min-max" or "min-start-max") for use in CLI
+         *     flags and config files; advanced fields are Python-only.
+         */
+        AdaptiveConcurrency: {
+            /**
+             * Cooldown Seconds
+             * @default 15
+             */
+            cooldown_seconds: number;
+            /**
+             * Decrease Factor
+             * @default 0.8
+             */
+            decrease_factor: number;
+            /**
+             * Max
+             * @default 200
+             */
+            max: number;
+            /**
+             * Min
+             * @default 4
+             */
+            min: number;
+            /**
+             * Scale Up Percent
+             * @default 0.05
+             */
+            scale_up_percent: number;
+            /**
+             * Start
+             * @default 20
+             */
+            start: number;
+        };
+        /**
          * AppConfig
          * @description Application configuration returned by GET /config.
          */
@@ -1349,6 +1392,8 @@ export interface components {
          * @description Model generation options.
          */
         "GenerateConfig-Input": {
+            /** Adaptive Connections */
+            adaptive_connections?: boolean | components["schemas"]["AdaptiveConcurrency"] | null;
             /** Attempt Timeout */
             attempt_timeout?: number | null;
             /** Batch */
@@ -1430,6 +1475,8 @@ export interface components {
          * @description Model generation options.
          */
         "GenerateConfig-Output": {
+            /** Adaptive Connections */
+            adaptive_connections?: boolean | components["schemas"]["AdaptiveConcurrency"] | null;
             /** Attempt Timeout */
             attempt_timeout?: number | null;
             /** Batch */
@@ -3032,6 +3079,12 @@ export interface components {
                 [key: string]: components["schemas"]["ModelUsage"];
             } | null;
             score: components["schemas"]["Score"];
+            /** Scorer */
+            scorer?: string | null;
+            /** Scorer Args */
+            scorer_args?: {
+                [key: string]: unknown;
+            } | null;
             /** Span Id */
             span_id?: string | null;
             /** Target */
