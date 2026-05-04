@@ -40,4 +40,12 @@ export type {
   TranscriptCollapseState,
 } from "@tsmono/inspect-components/transcript";
 
+// Context providers required by TranscriptLayout. Hosts must wrap any
+// transcript-rendering subtree with both: ComponentIconProvider (icon class
+// names for shared UI) and ComponentStateProvider (host-side state hooks).
+export { ComponentIconProvider } from "@tsmono/react/components";
+export { ComponentStateProvider } from "@tsmono/react/state";
+export type { ComponentIcons } from "@tsmono/react/components";
+export type { ComponentStateHooks } from "@tsmono/react/state";
+
 export type { Event, ChatMessage } from "@tsmono/inspect-common/types";
