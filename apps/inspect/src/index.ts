@@ -27,3 +27,17 @@ export type {
 
 // State Store
 export { initializeStore } from "./state/store";
+
+// Transcript layout — re-exported from inspect-components so consumers of
+// @metrevals/inspect-log-viewer can render transcripts with their own data
+// (e.g. paginated, warehouse-backed event slices).
+export {
+  TranscriptLayout,
+  kTranscriptCollapseScope,
+} from "@tsmono/inspect-components/transcript";
+export type {
+  TranscriptLayoutProps,
+  TranscriptCollapseState,
+} from "@tsmono/inspect-components/transcript";
+
+export type { Event, ChatMessage } from "@tsmono/inspect-common/types";
