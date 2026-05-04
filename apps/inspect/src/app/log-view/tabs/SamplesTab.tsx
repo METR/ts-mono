@@ -1,4 +1,4 @@
-import type { ColDef } from "ag-grid-community";
+import type { ColDef, GridApi } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import {
   FC,
@@ -32,6 +32,13 @@ import {
 import { useStore } from "../../../state/store.ts";
 import { ApplicationIcons } from "../../appearance/icons.ts";
 import { NavbarButton } from "../../navbar/NavbarButton.tsx";
+import {
+  astToFilterModel,
+  FilterModel,
+} from "../../samples/sample-tools/astToFilterModel.ts";
+import { parseFilter } from "../../samples/sample-tools/filterAst.ts";
+import { filterModelToText } from "../../samples/sample-tools/filterModelToText.ts";
+import { buildSampleFilterRegistry } from "../../samples/sample-tools/filterRegistry.ts";
 import { ColumnSelectorPopover } from "../../shared/ColumnSelectorPopover.tsx";
 import { getFieldKey } from "../../shared/gridUtils.ts";
 import {
@@ -337,11 +344,101 @@ export const SamplesTab: FC<SamplesTabProps> = ({
   // Tracked here so the column selector can mark filtered columns.
   // Updated via the grid's onFilterChanged callback.
   const [filteredFields, setFilteredFields] = useState<string[]>([]);
-  const handleFilterChanged = useCallback(
-    (api: { getFilterModel: () => Record<string, unknown> | null }) => {
-      setFilteredFields(Object.keys(api.getFilterModel() ?? {}));
+
+  // Bidirectional filter sync (phases 2b + 2c). The toolbar text filter
+  // and the column `FilterModel` describe the same logical narrowing;
+  // this block keeps them in lock-step:
+  //
+  //   columns →  text:  on every grid filter change, synthesize a filtrex
+  //                     expression from the FilterModel and push to text.
+  //   text    → columns: when the text changes (and is round-trippable),
+  //                     parse it into a FilterModel and apply it to the
+  //                     grid. Non-round-trippable text clears the column
+  //                     filters so they don't double-narrow.
+  //
+  // The feedback loop is broken at each boundary by comparing the value
+  // we'd write against the value already there — the two sides are the
+  // canonical state, no separate trackers needed.
+  const filterRegistry = useMemo(
+    () => buildSampleFilterRegistry(samplesDescriptor?.evalDescriptor),
+    [samplesDescriptor]
+  );
+  const setFilter = useStore((state) => state.logActions.setFilter);
+  const currentFilter = useStore((state) => state.log.filter);
+  const currentFilterRef = useRef(currentFilter);
+  currentFilterRef.current = currentFilter;
+
+  /** Parse `text` and project it to the FilterModel the column UI
+   *  should be holding — `{}` for empty or non-round-trippable text. */
+  const filterModelFromText = useCallback(
+    (text: string): FilterModel => {
+      const { ast } = parseFilter(text);
+      return ast ? (astToFilterModel(ast, filterRegistry) ?? {}) : {};
     },
-    []
+    [filterRegistry]
+  );
+
+  const handleFilterChanged = useCallback(
+    (api: GridApi<SampleRow>) => {
+      const model = api.getFilterModel() ?? {};
+      setFilteredFields(Object.keys(model));
+
+      // If `currentFilter` already projects to the model we're seeing,
+      // the two sides are aligned — no echo needed. This covers both the
+      // round-trippable case (`tokens > 50` ↔ `{tokens: gt 50}`) and the
+      // expression-only case where text stays put while columns are `{}`.
+      const fromText = filterModelFromText(currentFilterRef.current);
+      if (JSON.stringify(fromText) === JSON.stringify(model)) return;
+
+      const synthesized = filterModelToText(model, filterRegistry);
+      // Columns are filtered but none are representable — leave text alone.
+      if (synthesized === null) return;
+      if (synthesized !== currentFilterRef.current) setFilter(synthesized);
+    },
+    [filterRegistry, filterModelFromText, setFilter]
+  );
+
+  useEffect(() => {
+    const api = sampleListHandle.current?.api;
+    if (!api) return;
+    const desired = filterModelFromText(currentFilter);
+    const current: FilterModel = (api.getFilterModel() ?? {}) as FilterModel;
+    // Preserve current model entries that the synthesizer would have
+    // skipped — they live only in the column UI and must not be wiped
+    // by a text-driven update. Entries the user can express in text
+    // (round-trippable ones) are governed by `desired`.
+    const merged: FilterModel = { ...desired };
+    for (const [colId, filter] of Object.entries(current)) {
+      const isRepresentable =
+        filterModelToText({ [colId]: filter }, filterRegistry) !== null;
+      if (!isRepresentable && !(colId in desired)) {
+        merged[colId] = filter;
+      }
+    }
+    if (JSON.stringify(current) === JSON.stringify(merged)) return;
+    api.setFilterModel(merged);
+  }, [currentFilter, filterModelFromText, filterRegistry]);
+
+  // When the toolbar text is a non-round-trippable expression, hide the
+  // column-header filter buttons. Using one would overwrite the typed
+  // text with a much narrower synthesized version. Empty text and
+  // round-trippable text both leave the headers usable.
+  const columnFilteringAllowed = useMemo(() => {
+    if (!currentFilter.trim()) return true;
+    const { ast } = parseFilter(currentFilter);
+    if (!ast) return false;
+    return astToFilterModel(ast, filterRegistry) !== null;
+  }, [currentFilter, filterRegistry]);
+
+  const gridColumns = useMemo(
+    () =>
+      columnFilteringAllowed
+        ? allColumns
+        : allColumns.map((col) => ({
+            ...col,
+            suppressHeaderFilterButton: true,
+          })),
+    [allColumns, columnFilteringAllowed]
   );
 
   if (totalSampleCount === 0) {
@@ -369,7 +466,7 @@ export const SamplesTab: FC<SamplesTabProps> = ({
         <SampleList
           listHandle={sampleListHandle}
           items={items}
-          columns={allColumns}
+          columns={gridColumns}
           columnVisibility={visibilityForGrid}
           earlyStopping={selectedLogDetails?.results?.early_stopping}
           totalItemCount={evalSampleCount}
