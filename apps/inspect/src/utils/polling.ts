@@ -11,9 +11,11 @@ export interface Polling {
   stop: () => void;
 }
 
+export type PollingCallbackResult = boolean | "immediate";
+
 export const createPolling = (
   name: string,
-  callback: () => Promise<boolean>,
+  callback: () => Promise<PollingCallbackResult>,
   options: PollingOptions
 ): Polling => {
   const log = createLogger(`Polling ${name}`);
@@ -58,6 +60,12 @@ export const createPolling = (
       // Reset retry count on success
       retryCount = 0;
       if (!isPolling || isStopped) {
+        return;
+      }
+      if (shouldContinue === "immediate") {
+        // setTimeout(0) yields to the task queue so the renderer can paint
+        // and GC between iterations; queueMicrotask would starve both.
+        timeoutId = setTimeout(poll, 0);
         return;
       }
       timeoutId = setTimeout(poll, interval * 1000);
