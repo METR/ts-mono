@@ -896,7 +896,10 @@ export interface components {
              * @constant
              */
             event: "branch";
-            /** From Anchor */
+            /**
+             * From Anchor
+             * @default
+             */
             from_anchor: string;
             /** Metadata */
             metadata?: {
