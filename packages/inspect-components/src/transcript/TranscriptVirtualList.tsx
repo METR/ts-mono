@@ -1,6 +1,7 @@
 import { FC, memo, ReactNode } from "react";
 
 import type {
+  AnchorEvent,
   ApprovalEvent,
   BranchEvent,
   CompactionEvent,
@@ -22,10 +23,12 @@ import type {
   ToolEvent,
 } from "@tsmono/inspect-common/types";
 
+import { AnchorEventView } from "./AnchorEventView";
 import { ApprovalEventView } from "./ApprovalEventView";
 import { BranchEventView } from "./BranchEventView";
 import { CompactionEventView } from "./CompactionEventView";
 import { ErrorEventView } from "./ErrorEventView";
+import { ForkNavigatorView } from "./ForkNavigatorView";
 import { InfoEventView } from "./InfoEventView";
 import { InputEventView } from "./InputEventView";
 import { LoggerEventView } from "./LoggerEventView";
@@ -101,6 +104,14 @@ const RenderedEventNodeInner: FC<RenderedEventNodeProps> = ({
         />
       );
 
+    case "anchor":
+      return (
+        <AnchorEventView
+          eventNode={node as EventNode<AnchorEvent>}
+          className={className}
+        />
+      );
+
     case "compaction":
       return (
         <CompactionEventView
@@ -155,6 +166,14 @@ const RenderedEventNodeInner: FC<RenderedEventNodeProps> = ({
       );
 
     case "span_begin": {
+      if (node.event.type === "fork_nav") {
+        return (
+          <ForkNavigatorView
+            eventNode={node as EventNode<SpanBeginEvent>}
+            className={className}
+          />
+        );
+      }
       // If the app provides a renderer for agent/branch spans, use it
       if (renderAgentCard && node.sourceSpan) {
         const spanType = node.sourceSpan.spanType;
