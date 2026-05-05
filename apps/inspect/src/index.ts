@@ -41,11 +41,19 @@ export type {
 } from "@tsmono/inspect-components/transcript";
 
 // Context providers required by TranscriptLayout. Hosts must wrap any
-// transcript-rendering subtree with both: ComponentIconProvider (icon class
-// names for shared UI) and ComponentStateProvider (host-side state hooks).
+// transcript-rendering subtree with all three: ComponentIconProvider (icon
+// class names for shared UI), ComponentStateProvider (host-side state
+// hooks), and ComponentNavigationProvider (host-side navigate function).
+// ComponentNavigationProvider must live *inside* the router tree because
+// it typically wraps the host's `useNavigate()`.
 export { ComponentIconProvider } from "@tsmono/react/components";
+export { ComponentNavigationProvider } from "@tsmono/react/components";
+export { ExtendedFindProvider } from "@tsmono/react/components";
 export { ComponentStateProvider } from "@tsmono/react/state";
-export type { ComponentIcons } from "@tsmono/react/components";
+export type {
+  ComponentIcons,
+  ComponentNavigation,
+} from "@tsmono/react/components";
 export type { ComponentStateHooks } from "@tsmono/react/state";
 
 export type { Event, ChatMessage } from "@tsmono/inspect-common/types";
