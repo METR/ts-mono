@@ -352,7 +352,12 @@ export const clientApi = (
     return api.eval_pending_samples(log_file, etag);
   };
 
-  const get_log_sample_data = (
+  // Probe-once selector: the only signal that flips the choice is an
+  // explicit "not supported" return from the direct probe; real errors
+  // bubble up.
+  const sampleDataPathByLog = new Map<string, "direct" | "proxy">();
+
+  const get_log_sample_data = async (
     log_file: string,
     id: string | number,
     epoch: number,
@@ -363,6 +368,47 @@ export const clientApi = (
   ): Promise<SampleDataResponse | undefined> => {
     if (!api.eval_log_sample_data) {
       throw new Error("API doesn't supported streamed sample data");
+    }
+
+    let path = sampleDataPathByLog.get(log_file);
+    if (path === undefined && api.eval_log_sample_data_direct) {
+      const probe = await api.eval_log_sample_data_direct(
+        log_file,
+        id,
+        epoch,
+        last_event,
+        last_attachment,
+        last_message_pool,
+        last_call_pool
+      );
+      if (probe !== undefined) {
+        sampleDataPathByLog.set(log_file, "direct");
+        return probe;
+      }
+    }
+    if (path === undefined) {
+      path = "proxy";
+      sampleDataPathByLog.set(log_file, path);
+    }
+
+    if (path === "direct") {
+      const result = await api.eval_log_sample_data_direct!(
+        log_file,
+        id,
+        epoch,
+        last_event,
+        last_attachment,
+        last_message_pool,
+        last_call_pool
+      );
+      if (result === undefined) {
+        // Probe succeeded but a later call says "not supported" — server state
+        // changed; fail loudly rather than silently switching paths.
+        throw new Error(
+          "Direct pending-sample-data path returned 'not supported' after probe"
+        );
+      }
+      return result;
     }
     return api.eval_log_sample_data(
       log_file,

@@ -18,7 +18,7 @@ import {
   SampleSummary,
 } from "../client/api/types";
 import { resolveAttachments } from "../utils/attachments";
-import { createPolling } from "../utils/polling";
+import { createPolling, PollingCallbackResult } from "../utils/polling";
 
 import {
   resolveSample,
@@ -114,7 +114,7 @@ export function createSamplePolling(
 
     // Create the polling callback
     log.debug(`Polling sample: ${summary.id}-${summary.epoch}`);
-    const pollCallback = async () => {
+    const pollCallback = async (): Promise<PollingCallbackResult> => {
       const state = store.getState();
       const { sampleActions } = state;
 
@@ -186,19 +186,19 @@ export function createSamplePolling(
         return false;
       };
 
-      // Fetch sample data
-      const eventId = pollingState.eventId;
-      const attachmentId = pollingState.attachmentId;
-      const messagePoolId = pollingState.messagePoolId;
-      const callPoolId = pollingState.callPoolId;
+      // Snapshot cursors before the call so we can detect progress below.
+      const priorEventId = pollingState.eventId;
+      const priorAttachmentId = pollingState.attachmentId;
+      const priorMessagePoolId = pollingState.messagePoolId;
+      const priorCallPoolId = pollingState.callPoolId;
       const sampleDataResponse = await api.get_log_sample_data(
         logFile,
         summary.id,
         summary.epoch,
-        eventId,
-        attachmentId,
-        messagePoolId !== kNoId ? messagePoolId : undefined,
-        callPoolId !== kNoId ? callPoolId : undefined
+        priorEventId,
+        priorAttachmentId,
+        priorMessagePoolId,
+        priorCallPoolId
       );
 
       if (localAbort.signal.aborted) {
@@ -231,50 +231,60 @@ export function createSamplePolling(
         }
         sampleActions.setSampleStatus("streaming");
 
-        if (sampleDataResponse.sampleData) {
-          // Process attachments
-          processAttachments(sampleDataResponse.sampleData, pollingState);
+        // Process attachments
+        processAttachments(sampleDataResponse.sampleData, pollingState);
 
-          // Process pool entries (must come before events so refs can be resolved)
-          processMessagePool(sampleDataResponse.sampleData, pollingState);
-          processCallPool(sampleDataResponse.sampleData, pollingState);
+        // Process pool entries (must come before events so refs can be resolved)
+        processMessagePool(sampleDataResponse.sampleData, pollingState);
+        processCallPool(sampleDataResponse.sampleData, pollingState);
 
-          // Process events
-          const processedEvents = processEvents(
-            sampleDataResponse.sampleData,
-            pollingState,
-            api,
-            logFile
+        // Process events
+        const processedEvents = processEvents(
+          sampleDataResponse.sampleData,
+          pollingState,
+          api,
+          logFile
+        );
+
+        // update max attachment id
+        if (sampleDataResponse.sampleData.attachments.length > 0) {
+          const maxAttachment = findMaxId(
+            sampleDataResponse.sampleData.attachments,
+            pollingState.attachmentId
           );
+          log.debug(`New max attachment ${maxAttachment}`);
+          pollingState.attachmentId = maxAttachment;
+        }
 
-          // update max attachment id
-          if (sampleDataResponse.sampleData.attachments.length > 0) {
-            const maxAttachment = findMaxId(
-              sampleDataResponse.sampleData.attachments,
-              pollingState.attachmentId
-            );
-            log.debug(`New max attachment ${maxAttachment}`);
-            pollingState.attachmentId = maxAttachment;
-          }
+        // update max event id
+        if (sampleDataResponse.sampleData.events.length > 0) {
+          const maxEvent = findMaxId(
+            sampleDataResponse.sampleData.events,
+            pollingState.eventId
+          );
+          log.debug(`New max event ${maxEvent}`);
+          pollingState.eventId = maxEvent;
+        }
 
-          // update max event id
-          if (sampleDataResponse.sampleData.events.length > 0) {
-            const maxEvent = findMaxId(
-              sampleDataResponse.sampleData.events,
-              pollingState.eventId
-            );
-            log.debug(`New max event ${maxEvent}`);
-            pollingState.eventId = maxEvent;
-          }
+        // Update the running events (ensure identity of runningEvents fails equality)
+        if (processedEvents) {
+          sampleActions.setRunningEvents([...pollingState.events]);
+        }
 
-          // Update the running events (ensure identity of runningEvents fails equality)
-          if (processedEvents) {
-            sampleActions.setRunningEvents([...pollingState.events]);
-          }
+        // Catch-up poll when the server truncated the segment list — but
+        // only if we actually advanced, otherwise we'd spin.
+        const advanced =
+          pollingState.eventId > priorEventId ||
+          pollingState.attachmentId > priorAttachmentId ||
+          pollingState.messagePoolId > priorMessagePoolId ||
+          pollingState.callPoolId > priorCallPoolId;
+
+        if (sampleDataResponse.has_more === true && advanced) {
+          return "immediate";
         }
       }
 
-      // Continue polling
+      // Continue polling at the normal cadence
       return true;
     };
 
