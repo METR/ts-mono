@@ -2,6 +2,7 @@ import { LogInfo } from "@tsmono/inspect-common/types";
 
 import { EvalScores } from "../../../@types/extraInspect";
 import { asyncJsonParse } from "../../../utils/json-worker";
+import { fetchPendingSampleDataDirect } from "../../remote/remotePendingSampleData";
 import { download_file } from "../shared/api-shared";
 import {
   Capabilities,
@@ -11,6 +12,7 @@ import {
   LogViewAPI,
   PendingSampleResponse,
   PendingSamples,
+  PendingSampleUrls,
   SampleData,
   SampleDataResponse,
 } from "../types";
@@ -363,6 +365,83 @@ export function viewServerApi(
     return result.parsed;
   };
 
+  // Implementation detail of eval_log_sample_data_direct. The endpoint is
+  // not part of LogViewAPI; only the direct method below consumes it.
+  const get_pending_sample_data_urls = async (
+    log_file: string,
+    id: string | number,
+    epoch: number,
+    last_event?: number,
+    last_attachment?: number,
+    last_message_pool?: number,
+    last_call_pool?: number,
+    max_segments?: number
+  ): Promise<PendingSampleUrls> => {
+    const params = new URLSearchParams();
+    params.append("log", log_file);
+    params.append("id", String(id));
+    params.append("epoch", String(epoch));
+    if (last_event !== undefined) {
+      params.append("last-event-id", String(last_event));
+    }
+
+    if (last_attachment !== undefined) {
+      params.append("after-attachment-id", String(last_attachment));
+    }
+
+    if (last_message_pool !== undefined) {
+      params.append("after-message-pool-id", String(last_message_pool));
+    }
+
+    if (last_call_pool !== undefined) {
+      params.append("after-call-pool-id", String(last_call_pool));
+    }
+
+    if (max_segments !== undefined) {
+      params.append("max-segments", String(max_segments));
+    }
+
+    const request: Request<PendingSampleUrls> = {
+      headers: {},
+      parse: async (text: string) => {
+        return await asyncJsonParse<PendingSampleUrls>(text);
+      },
+    };
+
+    const result = await requestApi.fetchType<PendingSampleUrls>(
+      "GET",
+      `/pending-sample-data-urls?${params.toString()}`,
+      request
+    );
+    return result.parsed;
+  };
+
+  const eval_log_sample_data_direct = async (
+    log_file: string,
+    id: string | number,
+    epoch: number,
+    last_event?: number,
+    last_attachment?: number,
+    last_message_pool?: number,
+    last_call_pool?: number
+  ): Promise<SampleDataResponse | undefined> => {
+    const direct = await fetchPendingSampleDataDirect(
+      get_pending_sample_data_urls,
+      log_file,
+      id,
+      epoch,
+      { last_event, last_attachment, last_message_pool, last_call_pool }
+    );
+    if (direct === undefined) {
+      return undefined;
+    }
+    return {
+      status: "OK",
+      sampleData: direct.sampleData,
+      has_more: direct.has_more,
+    };
+  };
+
   const download_log = async (log_file: string): Promise<void> => {
     const baseUrl = apiBaseUrl || __VIEW_SERVER_API_URL__;
     const url = `${baseUrl}/log-download/${encodeURIComponent(log_file)}`;
@@ -392,5 +471,6 @@ export function viewServerApi(
     open_log_file: async () => {},
     eval_pending_samples,
     eval_log_sample_data,
+    eval_log_sample_data_direct,
   };
 }

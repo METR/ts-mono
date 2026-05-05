@@ -79,6 +79,19 @@ export interface PendingSampleResponse {
 export interface SampleDataResponse {
   sampleData?: SampleData;
   status: "NotModified" | "NotFound" | "OK";
+  has_more?: boolean;
+}
+
+export interface SegmentRef {
+  id: number;
+  member_name: string;
+  direct_url: string | null;
+}
+
+export interface PendingSampleUrls {
+  segments: SegmentRef[];
+  complete: boolean;
+  has_more: boolean;
 }
 
 // Client-side types — looser than generated server types because they're
@@ -198,6 +211,20 @@ export interface LogViewAPI {
     etag?: string
   ) => Promise<PendingSampleResponse>;
   eval_log_sample_data?: (
+    log_file: string,
+    id: string | number,
+    epoch: number,
+    last_event?: number,
+    last_attachment?: number,
+    last_message_pool?: number,
+    last_call_pool?: number
+  ) => Promise<SampleDataResponse | undefined>;
+  // Alternative to eval_log_sample_data that fetches segment zips directly
+  // from S3 via presigned URLs. Returns undefined when the server doesn't
+  // support this path (missing endpoint, non-S3 buffer); throws on real
+  // errors. Callers pick one path per (log_file) and stick with it; see
+  // ClientAPI.get_log_sample_data for the selector.
+  eval_log_sample_data_direct?: (
     log_file: string,
     id: string | number,
     epoch: number,

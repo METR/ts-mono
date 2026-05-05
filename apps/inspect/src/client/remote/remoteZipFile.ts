@@ -278,6 +278,87 @@ export const openRemoteZipFile = async (
   };
 };
 
+/**
+ * Opens an in-memory ZIP buffer and provides a method to read files within it.
+ * Used by the pending-sample-data direct-S3 path, where we fetch the whole
+ * segment zip (typically small, ~33 KB median) in one request rather than
+ * three range requests for EOCD + central directory + file data.
+ */
+export const openZipFileFromBuffer = async (
+  bytes: Uint8Array
+): Promise<{
+  centralDirectory: Map<string, CentralDirectoryEntry>;
+  readFile: (file: string, maxBytes?: number) => Promise<Uint8Array>;
+}> => {
+  const contentLength = bytes.length;
+  if (contentLength < 22) {
+    throw new Error("Buffer too small to be a ZIP file");
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  // Assumes no ZIP comment (true for segments written by SampleBufferFilestore).
+  const eocdrStart = contentLength - 22;
+  if (view.getUint32(eocdrStart, true) !== 0x06054b50) {
+    throw new Error("End of central directory record not found");
+  }
+
+  let centralDirOffset = view.getUint32(eocdrStart + 16, true);
+  let centralDirSize = view.getUint32(eocdrStart + 12, true);
+
+  if (centralDirOffset === 0xffffffff || centralDirSize === 0xffffffff) {
+    const locatorStart = eocdrStart - 20;
+    if (view.getUint32(locatorStart, true) !== 0x07064b50) {
+      throw new Error("ZIP64 End of central directory locator not found");
+    }
+    const zip64EOCDOffset = Number(view.getBigUint64(locatorStart + 8, true));
+    if (view.getUint32(zip64EOCDOffset, true) !== 0x06064b50) {
+      throw new Error("ZIP64 End of central directory record not found");
+    }
+    centralDirSize = Number(view.getBigUint64(zip64EOCDOffset + 40, true));
+    centralDirOffset = Number(view.getBigUint64(zip64EOCDOffset + 48, true));
+  }
+
+  // slice() rather than subarray() because parseCentralDirectory and
+  // parseZipFileEntry build a DataView from `buffer` without a byteOffset.
+  const centralDirectory = parseCentralDirectory(
+    bytes.slice(centralDirOffset, centralDirOffset + centralDirSize)
+  );
+
+  return {
+    centralDirectory,
+    readFile: async (file, maxBytes): Promise<Uint8Array> => {
+      const entry = centralDirectory.get(file);
+      if (!entry) {
+        throw new Error(`File not found: ${file}`);
+      }
+      const headerSize = 30;
+      if (entry.fileOffset + headerSize > bytes.length) {
+        throw new Error(`File entry header is truncated for ${file}`);
+      }
+      const extraFieldLength =
+        bytes[entry.fileOffset + 28] + (bytes[entry.fileOffset + 29] << 8);
+      const totalSize =
+        headerSize +
+        entry.filenameLength +
+        extraFieldLength +
+        entry.compressedSize;
+      if (maxBytes && totalSize > maxBytes) {
+        throw new FileSizeLimitError(file, maxBytes);
+      }
+      const zipFileEntry = await parseZipFileEntry(
+        file,
+        bytes.slice(entry.fileOffset, entry.fileOffset + totalSize)
+      );
+      return decompressData(
+        zipFileEntry.data,
+        zipFileEntry.compressionMethod,
+        zipFileEntry.uncompressedSize,
+        file
+      );
+    },
+  };
+};
+
 export const fetchSize = async (url: string): Promise<number> => {
   // Make a HEAD request to find whether the server supports range requests
   const acceptResponse = await fetch(url, { method: "HEAD" });

@@ -352,7 +352,14 @@ export const clientApi = (
     return api.eval_pending_samples(log_file, etag);
   };
 
-  const get_log_sample_data = (
+  // Per-log_file pin for the sample-data path. The choice (direct vs proxy)
+  // is made once on the first poll for an eval and stays for the rest of the
+  // session — direct/proxy are alternatives, not a primary-with-fallback. A
+  // real error on the chosen path bubbles up; the only signal that flips the
+  // decision is the explicit "not supported" return from the direct probe.
+  const sampleDataPathByLog = new Map<string, "direct" | "proxy">();
+
+  const get_log_sample_data = async (
     log_file: string,
     id: string | number,
     epoch: number,
@@ -363,6 +370,49 @@ export const clientApi = (
   ): Promise<SampleDataResponse | undefined> => {
     if (!api.eval_log_sample_data) {
       throw new Error("API doesn't supported streamed sample data");
+    }
+
+    let path = sampleDataPathByLog.get(log_file);
+    if (path === undefined && api.eval_log_sample_data_direct) {
+      const probe = await api.eval_log_sample_data_direct(
+        log_file,
+        id,
+        epoch,
+        last_event,
+        last_attachment,
+        last_message_pool,
+        last_call_pool
+      );
+      if (probe !== undefined) {
+        sampleDataPathByLog.set(log_file, "direct");
+        return probe;
+      }
+      // Direct path explicitly unsupported for this log (404 or non-S3).
+    }
+    if (path === undefined) {
+      path = "proxy";
+      sampleDataPathByLog.set(log_file, path);
+    }
+
+    if (path === "direct") {
+      const result = await api.eval_log_sample_data_direct!(
+        log_file,
+        id,
+        epoch,
+        last_event,
+        last_attachment,
+        last_message_pool,
+        last_call_pool
+      );
+      if (result === undefined) {
+        // The probe returned a result, so a later "not supported" is a server
+        // state change we don't expect — fail loudly rather than silently
+        // switching paths mid-session.
+        throw new Error(
+          "Direct pending-sample-data path returned 'not supported' after probe"
+        );
+      }
+      return result;
     }
     return api.eval_log_sample_data(
       log_file,

@@ -11,9 +11,11 @@ export interface Polling {
   stop: () => void;
 }
 
+export type PollingCallbackResult = boolean | "immediate";
+
 export const createPolling = (
   name: string,
-  callback: () => Promise<boolean>,
+  callback: () => Promise<PollingCallbackResult>,
   options: PollingOptions
 ): Polling => {
   const log = createLogger(`Polling ${name}`);
@@ -58,6 +60,14 @@ export const createPolling = (
       // Reset retry count on success
       retryCount = 0;
       if (!isPolling || isStopped) {
+        return;
+      }
+      if (shouldContinue === "immediate") {
+        // Yield to the browser's task queue (not just the microtask queue) so
+        // that React can paint each chunk and V8 can GC transient fetch/parse
+        // state between iterations. queueMicrotask here starves the renderer
+        // and accumulates memory until the tab OOMs.
+        timeoutId = setTimeout(poll, 0);
         return;
       }
       timeoutId = setTimeout(poll, interval * 1000);
