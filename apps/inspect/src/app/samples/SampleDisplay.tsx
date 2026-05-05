@@ -38,6 +38,8 @@ import {
 import { useScrollDirection } from "@tsmono/react/hooks";
 import { isHostedEnvironment, isVscode } from "@tsmono/util";
 
+import { openInNewTab } from "../shared/openInNewTab";
+
 import { Events } from "../../@types/extraInspect";
 import { SampleSummary } from "../../client/api/types";
 import { ActivityBar } from "../../components/ActivityBar";
@@ -266,7 +268,7 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
         effectiveSelectedTab,
         prefix
       );
-      window.open(`#${printUrl}`, "_blank");
+      openInNewTab(printUrl);
     }
   }, [printLogPath, printSampleId, printEpoch, effectiveSelectedTab, prefix]);
 

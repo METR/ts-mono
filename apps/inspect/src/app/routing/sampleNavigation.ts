@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useFilteredSamples } from "../../state/hooks";
 import { useStore } from "../../state/store";
 import { directoryRelativeUrl } from "../../utils/uri";
+import { openInNewTab } from "../shared/openInNewTab";
 import { sampleIdsEqual } from "../shared/sample";
 
 import {
@@ -280,7 +281,7 @@ export const useSamplesGridNavigation = () => {
 
       if (openInNewWindow) {
         // Open in new window/tab
-        window.open(`#${url}`, "_blank");
+        openInNewTab(url);
       } else {
         navigate(url);
       }
