@@ -66,6 +66,7 @@ import {
   useRoutePrefix,
   useSampleUrlBuilder,
 } from "../routing/url";
+import { openInNewTab } from "../shared/openInNewTab";
 
 import { messagesFromEvents } from "./messagesFromEvents";
 import styles from "./SampleDisplay.module.css";
@@ -266,7 +267,7 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
         effectiveSelectedTab,
         prefix
       );
-      window.open(`#${printUrl}`, "_blank");
+      openInNewTab(printUrl);
     }
   }, [printLogPath, printSampleId, printEpoch, effectiveSelectedTab, prefix]);
 

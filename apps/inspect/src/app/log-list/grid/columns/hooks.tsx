@@ -218,9 +218,34 @@ export const useLogListColumns = (
           if (item.type === "file") {
             value = item.task || parseLogFileName(item.name).name;
           }
+          const href = item.url
+            ? `${window.location.pathname}#${item.url}`
+            : undefined;
           return (
             <div className={styles.nameCell}>
-              {item.type === "folder" && item.url ? (
+              {href ? (
+                <a
+                  href={href}
+                  className={styles.rowLink}
+                  onClick={(e) => {
+                    // Normal click: prevent <a> navigation, let AG Grid handle
+                    if (
+                      !e.metaKey &&
+                      !e.ctrlKey &&
+                      !e.shiftKey &&
+                      e.button === 0
+                    ) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  {item.type === "folder" ? (
+                    <span className={styles.folder}>{value}</span>
+                  ) : (
+                    <span className={styles.taskText}>{value}</span>
+                  )}
+                </a>
+              ) : item.type === "folder" ? (
                 <span className={styles.folder}>{value}</span>
               ) : (
                 <span className={styles.taskText}>{value}</span>

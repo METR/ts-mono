@@ -34,6 +34,7 @@ import "../../shared/agGrid";
 import styles from "../../shared/gridCells.module.css";
 import { createGridKeyboardHandler } from "../../shared/gridKeyboardNavigation";
 import { createGridColumnResizer } from "../../shared/gridUtils";
+import { openInNewTab } from "../../shared/openInNewTab";
 import gridChromeStyles from "../../shared/samples-grid/SamplesGrid.module.css";
 import { useApplyColumnVisibility } from "../../shared/useApplyColumnVisibility";
 import { FileLogItem, FolderLogItem, PendingTaskItem } from "../LogItem";
@@ -253,20 +254,20 @@ export const LogListGrid: FC<LogListGridProps> = ({
         e.node.setSelected(true);
 
         const mouseEvent = e.event as MouseEvent | undefined;
-        const openInNewWindow =
+        // Modifier clicks are handled by the <a> overlay in the cell renderer
+        if (
           mouseEvent?.metaKey ||
           mouseEvent?.ctrlKey ||
           mouseEvent?.shiftKey ||
-          mouseEvent?.button === 1;
+          mouseEvent?.button === 1
+        ) {
+          return;
+        }
 
         const url = e.data.url;
         if (url) {
           setTimeout(() => {
-            if (openInNewWindow) {
-              window.open(`#${url}`, "_blank");
-            } else {
-              navigate(url);
-            }
+            navigate(url);
           }, 10);
         }
       }
@@ -281,7 +282,7 @@ export const LogListGrid: FC<LogListGridProps> = ({
       }
       const openInNewWindow = e.metaKey || e.ctrlKey || e.shiftKey;
       if (openInNewWindow) {
-        window.open(`#${rowNode.data.url}`, "_blank");
+        openInNewTab(rowNode.data.url);
       } else {
         navigate(rowNode.data.url);
       }
@@ -310,12 +311,9 @@ export const LogListGrid: FC<LogListGridProps> = ({
   }, [handleKeyDown]);
 
   const handleCellMouseDown = useCallback(
-    (e: CellMouseDownEvent<LogListRow>) => {
-      const mouseEvent = e.event as MouseEvent | undefined;
-      if (mouseEvent?.button === 1 && e.data?.url) {
-        mouseEvent.preventDefault();
-        window.open(`#${e.data.url}`, "_blank");
-      }
+    (_e: CellMouseDownEvent<LogListRow>) => {
+      // Middle-click and modifier clicks are handled by the <a> overlay
+      // in the cell renderer for native background-tab behavior
     },
     []
   );
