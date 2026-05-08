@@ -370,6 +370,7 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
   }, [events, hiddenEventTypes]);
 
   useTranscriptSearchSource({
+    id: listId,
     events: searchableEvents,
     rows: timelineState.rows,
     selected: timelineSelection?.selected ?? null,
