@@ -327,6 +327,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/pending-sample-data-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Api Pending Sample Data Urls */
+        get: operations["api_pending_sample_data_urls_pending_sample_data_urls_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/pending-samples": {
         parameters: {
             query?: never;
@@ -2282,6 +2299,18 @@ export interface components {
             /** Event */
             event: string;
         };
+        /** PendingSampleUrls */
+        PendingSampleUrls: {
+            /** Complete */
+            complete: boolean;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+            /** Segments */
+            segments: components["schemas"]["SegmentRef"][];
+        };
         /**
          * ProvenanceData
          * @description Metadata about who made an edit and why.
@@ -2764,6 +2793,15 @@ export interface components {
             uuid?: string | null;
             /** Working Start */
             working_start: number;
+        };
+        /** SegmentRef */
+        SegmentRef: {
+            /** Direct Url */
+            direct_url?: string | null;
+            /** Id */
+            id: number;
+            /** Member Name */
+            member_name: string;
         };
         /**
          * SpanBeginEvent
@@ -3743,6 +3781,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SampleData"];
+                };
+            };
+        };
+    };
+    api_pending_sample_data_urls_pending_sample_data_urls_get: {
+        parameters: {
+            query: {
+                log: string;
+                id: string;
+                epoch: number;
+                "last-event-id"?: number | null;
+                "after-attachment-id"?: number | null;
+                "after-message-pool-id"?: number | null;
+                "after-call-pool-id"?: number | null;
+                "max-segments"?: number | null;
+                tail?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingSampleUrls"];
                 };
             };
         };
