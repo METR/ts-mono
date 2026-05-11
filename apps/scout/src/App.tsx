@@ -16,6 +16,7 @@ import {
   ComponentIconProvider,
   ComponentIcons,
   ExtendedFindProvider,
+  FindTargetProvider,
 } from "@tsmono/react/components";
 import { ComponentStateProvider } from "@tsmono/react/state";
 
@@ -73,7 +74,9 @@ const AppContent: FC<AppProps> = ({ mode = "scans" }) => {
         <ComponentStateProvider hooks={scoutStateHooks}>
           <AppModeContext.Provider value={mode}>
             <ExtendedFindProvider>
-              <RouterProvider router={router} />
+              <FindTargetProvider>
+                <RouterProvider router={router} />
+              </FindTargetProvider>
             </ExtendedFindProvider>
           </AppModeContext.Provider>
         </ComponentStateProvider>

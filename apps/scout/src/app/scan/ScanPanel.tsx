@@ -2,11 +2,7 @@ import clsx from "clsx";
 import React, { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import {
-  ErrorPanel,
-  ExtendedFindProvider,
-  LoadingBar,
-} from "@tsmono/react/components";
+import { ErrorPanel, LoadingBar } from "@tsmono/react/components";
 import { useDocumentTitle } from "@tsmono/react/hooks";
 
 import { getScannerParam } from "../../router/url";
@@ -61,9 +57,7 @@ export const ScanPanel: React.FC = () => {
       {!error && selectedScan && (
         <>
           <ScanPanelTitle resultsDir={scansDir} selectedScan={selectedScan} />
-          <ExtendedFindProvider>
-            <ScanPanelBody selectedScan={selectedScan} />
-          </ExtendedFindProvider>
+          <ScanPanelBody selectedScan={selectedScan} />
         </>
       )}
     </div>

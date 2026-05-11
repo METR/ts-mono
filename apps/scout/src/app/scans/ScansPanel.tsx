@@ -3,7 +3,6 @@ import { FC, useCallback, useEffect, useMemo } from "react";
 
 import {
   ErrorPanel,
-  ExtendedFindProvider,
   LoadingBar,
   NoContentsPanel,
 } from "@tsmono/react/components";
@@ -80,41 +79,39 @@ export const ScansPanel: FC = () => {
         bordered={true}
       />
       <LoadingBar loading={isFetching} />
-      <ExtendedFindProvider>
-        {error && (
-          <ErrorPanel
-            title="Error Loading Scans"
-            error={{ message: error.message }}
-          />
-        )}
-        {!data && !error && (
-          <NoContentsPanel icon={ApplicationIcons.running} text="Loading..." />
-        )}
-        {data && !error && (
-          <div className={styles.gridContainer}>
-            <ScansFilterBar
-              filterSuggestions={filterSuggestions}
-              onFilterColumnChange={onFilterColumnChange}
-            />
-            <ScansGrid
-              scans={scans}
-              resultsDir={scanDir}
-              loading={isFetching && scans.length === 0}
-              className={styles.grid}
-              onScrollNearEnd={handleScrollNearEnd}
-              hasMore={hasNextPage}
-              fetchThreshold={SCANS_INFINITE_SCROLL_CONFIG.threshold}
-              filterSuggestions={filterSuggestions}
-              onFilterColumnChange={onFilterColumnChange}
-            />
-          </div>
-        )}
-        <Footer
-          id={"scan-job-footer"}
-          itemCount={data?.pages[0]?.total_count ?? 0}
-          paginated={false}
+      {error && (
+        <ErrorPanel
+          title="Error Loading Scans"
+          error={{ message: error.message }}
         />
-      </ExtendedFindProvider>
+      )}
+      {!data && !error && (
+        <NoContentsPanel icon={ApplicationIcons.running} text="Loading..." />
+      )}
+      {data && !error && (
+        <div className={styles.gridContainer}>
+          <ScansFilterBar
+            filterSuggestions={filterSuggestions}
+            onFilterColumnChange={onFilterColumnChange}
+          />
+          <ScansGrid
+            scans={scans}
+            resultsDir={scanDir}
+            loading={isFetching && scans.length === 0}
+            className={styles.grid}
+            onScrollNearEnd={handleScrollNearEnd}
+            hasMore={hasNextPage}
+            fetchThreshold={SCANS_INFINITE_SCROLL_CONFIG.threshold}
+            filterSuggestions={filterSuggestions}
+            onFilterColumnChange={onFilterColumnChange}
+          />
+        </div>
+      )}
+      <Footer
+        id={"scan-job-footer"}
+        itemCount={data?.pages[0]?.total_count ?? 0}
+        paginated={false}
+      />
     </div>
   );
 };

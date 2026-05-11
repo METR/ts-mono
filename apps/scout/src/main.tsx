@@ -6,7 +6,6 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 
 import { defaultRetry } from "@tsmono/react";
-import { ExtendedFindProvider } from "@tsmono/react/components";
 import { getVscodeApi } from "@tsmono/util";
 
 import { ScoutApiV2 } from "./api/api";
@@ -75,9 +74,7 @@ root.render(
   <QueryClientProvider client={queryClient}>
     <ApiProvider value={api}>
       <StoreProvider value={store}>
-        <ExtendedFindProvider>
-          <App mode={scansMode ? "scans" : "workbench"} />
-        </ExtendedFindProvider>
+        <App mode={scansMode ? "scans" : "workbench"} />
       </StoreProvider>
     </ApiProvider>
     <ReactQueryDevtools initialIsOpen={false} />
