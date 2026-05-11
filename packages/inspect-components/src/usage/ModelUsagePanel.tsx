@@ -1,7 +1,5 @@
-// TODO: lint @typescript-eslint/no-redundant-type-constituents
-/* eslint-disable @typescript-eslint/no-redundant-type-constituents */
 import clsx from "clsx";
-import { FC, Fragment } from "react";
+import { FC } from "react";
 
 import { formatNumber } from "@tsmono/util";
 
@@ -16,118 +14,215 @@ export interface ModelUsageData {
   input_tokens_cache_write?: number | null;
 }
 
+export interface ModelUsageTiming {
+  timestamp: string;
+  completed?: string | null;
+  working_time?: number | null;
+}
+
 interface ModelUsageProps {
   usage: ModelUsageData;
+  timing?: ModelUsageTiming;
   className?: string | string[];
 }
 
-interface ModelUsageRow {
-  label: string | "---";
-  value?: number | null;
-  secondary?: boolean;
-  bordered?: boolean;
-  padded?: boolean;
+type CategoryKey =
+  | "input"
+  | "cacheRead"
+  | "cacheWrite"
+  | "output"
+  | "reasoning";
+
+interface Category {
+  key: CategoryKey;
+  label: string;
+  value: number;
+  swatchClass: string;
 }
 
-/**
- * Renders the ModelUsagePanel component.
- */
-export const ModelUsagePanel: FC<ModelUsageProps> = ({ usage, className }) => {
-  if (!usage) {
-    return null;
-  }
+const CAT_ORDER: CategoryKey[] = [
+  "input",
+  "cacheRead",
+  "cacheWrite",
+  "output",
+  "reasoning",
+];
 
-  const rows: ModelUsageRow[] = [];
+const CAT_LABEL: Record<CategoryKey, string> = {
+  input: "input",
+  cacheRead: "cache read",
+  cacheWrite: "cache write",
+  output: "output",
+  reasoning: "reasoning",
+};
 
-  if (usage.reasoning_tokens) {
-    rows.push({
-      label: "Reasoning",
-      value: usage.reasoning_tokens,
-      secondary: false,
-      bordered: true,
+const CAT_SWATCH: Record<CategoryKey, string> = {
+  input: styles.catInput!,
+  cacheRead: styles.catCacheRead!,
+  cacheWrite: styles.catCacheWrite!,
+  output: styles.catOutput!,
+  reasoning: styles.catReasoning!,
+};
+
+const buildCategories = (usage: ModelUsageData): Category[] => {
+  const vals: Record<CategoryKey, number> = {
+    input: usage.input_tokens ?? 0,
+    cacheRead: usage.input_tokens_cache_read ?? 0,
+    cacheWrite: usage.input_tokens_cache_write ?? 0,
+    output: usage.output_tokens ?? 0,
+    reasoning: usage.reasoning_tokens ?? 0,
+  };
+  return CAT_ORDER.filter((k) => vals[k] > 0).map((k) => ({
+    key: k,
+    label: CAT_LABEL[k],
+    value: vals[k],
+    swatchClass: CAT_SWATCH[k],
+  }));
+};
+
+const fmtDuration = (s: number): { value: string; unit: string } => {
+  if (s < 60) return { value: String(Math.round(s)), unit: "sec" };
+  const m = Math.floor(s / 60);
+  const r = Math.round(s % 60);
+  return r > 0
+    ? { value: `${m}m ${r}`, unit: "sec" }
+    : { value: String(m), unit: "min" };
+};
+
+const fmtTime = (iso: string): string => {
+  try {
+    return new Date(iso).toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
     });
-
-    rows.push({
-      label: "---",
-      value: undefined,
-      secondary: false,
-      padded: true,
-    });
+  } catch {
+    return iso;
   }
+};
 
-  rows.push({
-    label: "input",
-    value: usage.input_tokens,
-    secondary: false,
-  });
+const IconCpu = () => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+  >
+    <rect x="3.5" y="3.5" width="9" height="9" rx="1.2" />
+    <rect x="6" y="6" width="4" height="4" />
+    <path d="M5.5 1.5v1.5M8 1.5v1.5M10.5 1.5v1.5M5.5 13v1.5M8 13v1.5M10.5 13v1.5M1.5 5.5h1.5M1.5 8h1.5M1.5 10.5h1.5M13 5.5h1.5M13 8h1.5M13 10.5h1.5" />
+  </svg>
+);
 
-  if (usage.input_tokens_cache_read) {
-    rows.push({
-      label: "cache_read",
-      value: usage.input_tokens_cache_read,
-      secondary: true,
-    });
-  }
+const IconTimer = () => (
+  <svg
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+  >
+    <circle cx="8" cy="9" r="5" />
+    <path d="M8 9V5.5M6 1.5h4M8 1.5v2" />
+  </svg>
+);
 
-  if (usage.input_tokens_cache_write) {
-    rows.push({
-      label: "cache_write",
-      value: usage.input_tokens_cache_write,
-      secondary: true,
-    });
-  }
+export const ModelUsagePanel: FC<ModelUsageProps> = ({
+  usage,
+  timing,
+  className,
+}) => {
+  if (!usage) return null;
 
-  rows.push({
-    label: "Output",
-    value: usage.output_tokens,
-    secondary: false,
-    bordered: true,
-  });
+  const categories = buildCategories(usage);
+  const composeTotal = categories.reduce((a, c) => a + c.value, 0);
+  const total = usage.total_tokens || composeTotal;
 
-  rows.push({
-    label: "---",
-    value: undefined,
-    secondary: false,
-  });
+  const inputAll =
+    (usage.input_tokens ?? 0) +
+    (usage.input_tokens_cache_read ?? 0) +
+    (usage.input_tokens_cache_write ?? 0);
+  const outputAll = (usage.output_tokens ?? 0) + (usage.reasoning_tokens ?? 0);
+  const denom = inputAll + outputAll || total || 1;
+  const inputPct = Math.round((inputAll / denom) * 100);
+  const outputPct = Math.max(0, 100 - inputPct);
 
-  rows.push({
-    label: "Total",
-    value: usage.total_tokens,
-    secondary: false,
-  });
+  const hasTiming = !!timing;
+  const duration =
+    timing?.working_time != null ? fmtDuration(timing.working_time) : null;
 
   return (
-    <div className={clsx("text-size-small", styles.wrapper, className)}>
-      {rows.map((row, idx) => {
-        if (row.label === "---") {
-          return (
-            <div
-              key={`$usage-sep-${idx}`}
-              className={clsx(
-                styles.separator,
-                row.padded ? styles.padded : undefined
+    <div
+      className={clsx(styles.strip, hasTiming && styles.stripTimed, className)}
+    >
+      {/* Total tokens */}
+      <div className={styles.cell}>
+        <span className={styles.lab}>
+          <IconCpu /> Total tokens
+        </span>
+        <span className={styles.val}>{formatNumber(total)}</span>
+        {composeTotal > 0 && (
+          <span className={styles.sub}>
+            {inputPct}% input · {outputPct}% output
+          </span>
+        )}
+      </div>
+
+      {/* Composition */}
+      <div className={clsx(styles.cell, hasTiming && styles.span2)}>
+        <span className={styles.lab}>
+          <IconCpu /> Composition
+        </span>
+        <div className={styles.stack}>
+          {categories.map((c) => (
+            <span
+              key={c.key}
+              className={c.swatchClass}
+              style={{ width: `${(c.value / composeTotal) * 100}%` }}
+            />
+          ))}
+        </div>
+        <div className={styles.breakdown}>
+          {categories.map((c) => (
+            <span key={c.key}>
+              <span className={clsx(styles.swatch, c.swatchClass)} />
+              <b>{formatNumber(c.value)}</b> {c.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Working Time + Clock Times */}
+      {hasTiming && (
+        <>
+          <div className={styles.cell}>
+            <span className={styles.lab}>
+              <IconTimer /> Working time
+            </span>
+            <div className={styles.workingRow}>
+              {duration ? (
+                <span className={styles.val}>
+                  {duration.value} <small>{duration.unit}</small>
+                </span>
+              ) : (
+                <span className={styles.sub}>—</span>
               )}
-            ></div>
-          );
-        } else {
-          return (
-            <Fragment key={`$usage-row-${idx}`}>
-              <div
-                className={clsx(
-                  "text-style-label",
-                  "text-style-secondary",
-                  row.secondary ? styles.col2 : styles.col1_3
-                )}
-              >
-                {row.label}
-              </div>
-              <div className={styles.col3}>
-                {row.value ? formatNumber(row.value) : ""}
-              </div>
-            </Fragment>
-          );
-        }
-      })}
+              {timing.timestamp && (
+                <div className={styles.clockRow}>
+                  <span className={styles.clockVal}>
+                    {fmtTime(timing.timestamp)}
+                  </span>
+                  <span className={styles.clockArrow}>→</span>
+                  <span className={styles.clockVal}>
+                    {timing.completed ? fmtTime(timing.completed) : "—"}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 };

@@ -40,14 +40,6 @@
   margin-top: 0;
 }
 
-.timePanel {
-  display: grid;
-  grid-template-columns: max-content max-content;
-  grid-template-rows: auto;
-  column-gap: 0.5em;
-  min-width: 200px;
-}
-
 .chat {
   padding: 1em;
 }

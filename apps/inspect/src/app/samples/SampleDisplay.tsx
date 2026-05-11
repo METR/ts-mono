@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { EvalSample } from "@tsmono/inspect-common/types";
+import { EvalSample, EvalSpec } from "@tsmono/inspect-common/types";
 import {
   ChatViewVirtualList,
   messagesToStr,
@@ -22,7 +22,16 @@ import {
   RecordTree,
 } from "@tsmono/inspect-components/content";
 import { eventsToStr } from "@tsmono/inspect-components/transcript";
-import { ModelTokenTable } from "@tsmono/inspect-components/usage";
+import {
+  buildArgsByModel,
+  buildArgsByRole,
+  buildConfigsByModel,
+  buildConfigsByRole,
+  fmtClock,
+  fmtCompactDuration,
+  MetaItem,
+  UsagePanel,
+} from "@tsmono/inspect-components/usage";
 import {
   ANSIDisplay,
   Card,
@@ -49,6 +58,7 @@ import {
   kSampleRetriesTabId,
   kSampleScoringTabId,
   kSampleTranscriptTabId,
+  kSampleUsageTabId,
 } from "../../constants";
 import {
   useDocumentTitle,
@@ -56,7 +66,7 @@ import {
   useSelectedSampleSummary,
 } from "../../state/hooks";
 import { useStore } from "../../state/store";
-import { formatDateTime, formatTime } from "../../utils/format";
+import { formatDateTime } from "../../utils/format";
 import { ApplicationIcons } from "../appearance/icons";
 import { useSampleDetailNavigation } from "../routing/sampleNavigation";
 import {
@@ -240,6 +250,7 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
     [sampleUrlBuilder, urlLogPath, urlSampleId, urlEpoch]
   );
 
+  const sampleUsages = usageViewsForSample(`${baseId}-${id}`, sample, evalSpec);
   const sampleMetadatas = metadataViewsForSample(
     `${baseId}-${id}`,
     scrollRef,
@@ -659,6 +670,25 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                   scrollRef={scrollRef}
                 />
               </TabPanel>
+              {sampleUsages.length > 0 ? (
+                <TabPanel
+                  id={kSampleUsageTabId}
+                  className={clsx("sample-tab")}
+                  title="Usage"
+                  onSelected={onSelectedTab}
+                  selected={effectiveSelectedTab === kSampleUsageTabId}
+                >
+                  <div
+                    className={clsx(
+                      styles.padded,
+                      styles.fullWidth,
+                      styles.metadataPanel
+                    )}
+                  >
+                    {sampleUsages}
+                  </div>
+                </TabPanel>
+              ) : null}
               <TabPanel
                 id={kSampleMetdataTabId}
                 className={clsx("sample-tab")}
@@ -752,6 +782,108 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
   );
 };
 
+interface SampleUsagePanelProps {
+  id: string;
+  sample: EvalSample;
+  evalSpec?: EvalSpec;
+}
+
+const SampleUsagePanel: FC<SampleUsagePanelProps> = ({
+  id,
+  sample,
+  evalSpec,
+}) => {
+  const roleAliases = useMemo(() => {
+    if (!evalSpec?.model_roles) return undefined;
+    const roles: Record<string, string> = {};
+    for (const [role, config] of Object.entries(evalSpec.model_roles)) {
+      if (config.model) roles[role] = config.model;
+    }
+    return Object.keys(roles).length > 0 ? roles : undefined;
+  }, [evalSpec]);
+
+  const configsByModel = useMemo(
+    () => buildConfigsByModel(evalSpec),
+    [evalSpec]
+  );
+  const configsByRole = useMemo(() => buildConfigsByRole(evalSpec), [evalSpec]);
+  const argsByModel = useMemo(() => buildArgsByModel(evalSpec), [evalSpec]);
+  const argsByRole = useMemo(() => buildArgsByRole(evalSpec), [evalSpec]);
+
+  const meta = useMemo<MetaItem[]>(() => {
+    const items: MetaItem[] = [];
+    if (sample.working_time != null) {
+      items.push({
+        label: "Working time",
+        value: fmtCompactDuration(sample.working_time),
+      });
+    }
+    if (sample.total_time != null) {
+      items.push({
+        label: "Total time",
+        value: fmtCompactDuration(sample.total_time),
+      });
+    }
+    if (sample.started_at || sample.completed_at) {
+      const showDate = !!(
+        sample.started_at &&
+        sample.completed_at &&
+        new Date(sample.started_at).toDateString() !==
+          new Date(sample.completed_at).toDateString()
+      );
+      items.push({
+        label: "Window",
+        value: `${fmtClock(sample.started_at, showDate)} → ${fmtClock(sample.completed_at, showDate)}`,
+      });
+    }
+    return items;
+  }, [
+    sample.working_time,
+    sample.total_time,
+    sample.started_at,
+    sample.completed_at,
+  ]);
+
+  return (
+    <UsagePanel
+      key={`sample-usage-${id}`}
+      model_usage={sample.model_usage ?? undefined}
+      role_usage={sample.role_usage ?? undefined}
+      configs_by_model={configsByModel}
+      configs_by_role={configsByRole}
+      args_by_model={argsByModel}
+      args_by_role={argsByRole}
+      role_aliases={roleAliases}
+      meta={meta}
+    />
+  );
+};
+
+const usageViewsForSample = (
+  id: string,
+  sample?: EvalSample,
+  evalSpec?: EvalSpec
+) => {
+  if (!sample) return [];
+  const views = [];
+
+  if (
+    (sample.model_usage && Object.keys(sample.model_usage).length > 0) ||
+    (sample.role_usage && Object.keys(sample.role_usage).length > 0)
+  ) {
+    views.push(
+      <SampleUsagePanel
+        key={`sample-usage-${id}`}
+        id={id}
+        sample={sample}
+        evalSpec={evalSpec}
+      />
+    );
+  }
+
+  return views;
+};
+
 const metadataViewsForSample = (
   id: string,
   scrollRef: RefObject<HTMLDivElement | null>,
@@ -798,44 +930,6 @@ const metadataViewsForSample = (
           <RecordTree
             id={`task-sample-invalidation-${id}`}
             record={invalidationRecord}
-            className={clsx("tab-pane", styles.noTop)}
-            scrollRef={scrollRef}
-          />
-        </CardBody>
-      </Card>
-    );
-  }
-
-  if (sample.model_usage && Object.keys(sample.model_usage).length > 0) {
-    sampleMetadatas.push(
-      <Card key={`sample-usage-${id}`}>
-        <CardHeader label="Usage" />
-        <CardBody>
-          <ModelTokenTable
-            model_usage={sample.model_usage}
-            className={clsx(styles.noTop)}
-          />
-        </CardBody>
-      </Card>
-    );
-  }
-
-  if (
-    sample.total_time !== undefined &&
-    sample.total_time !== null &&
-    sample.working_time !== undefined &&
-    sample.working_time !== null
-  ) {
-    sampleMetadatas.push(
-      <Card key={`sample-time-${id}`}>
-        <CardHeader label="Time" />
-        <CardBody padded={false}>
-          <RecordTree
-            id={`task-sample-time-${id}`}
-            record={{
-              Working: formatTime(sample.working_time),
-              Total: formatTime(sample.total_time),
-            }}
             className={clsx("tab-pane", styles.noTop)}
             scrollRef={scrollRef}
           />

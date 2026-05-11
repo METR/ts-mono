@@ -22,7 +22,6 @@ import { formatTime } from "@tsmono/util";
 import { attemptDurationSec } from "./event/attemptDuration";
 import { EventPanel } from "./event/EventPanel";
 import { EventSection } from "./event/EventSection";
-import { EventTimingPanel } from "./event/EventTimingPanel";
 import { RetryChip } from "./event/RetryChip";
 import { formatTiming, formatTitle } from "./event/utils";
 import { TranscriptIcons } from "./icons";
@@ -210,29 +209,25 @@ export const ModelEventView: FC<ModelEventViewProps> = ({
       </div>
       <div data-name="All" className={styles.container}>
         <div className={styles.all}>
+          {event.output.usage ? (
+            <ModelUsagePanel
+              usage={event.output.usage}
+              timing={{
+                timestamp: event.timestamp,
+                completed: event.completed,
+                working_time: event.working_time,
+              }}
+            />
+          ) : undefined}
+
           {Object.keys(entries).length > 0 && (
             <EventSection
               title="Configuration"
-              className={styles.tableSelection}
+              className={clsx(styles.tableSelection, styles.config)}
             >
               <MetaDataGrid entries={entries} options={{ plain: true }} />
             </EventSection>
           )}
-
-          <EventSection title="Usage" className={styles.tableSelection}>
-            {event.output.usage ? (
-              <ModelUsagePanel usage={event.output.usage} />
-            ) : undefined}
-          </EventSection>
-
-          <EventSection title="Timing" className={styles.tableSelection}>
-            <EventTimingPanel
-              timestamp={event.timestamp}
-              completed={event.completed}
-              working_start={event.working_start}
-              working_time={event.working_time}
-            />
-          </EventSection>
         </div>
 
         <EventSection title="Messages">
@@ -241,6 +236,9 @@ export const ModelEventView: FC<ModelEventViewProps> = ({
             messages={[...event.input, ...(outputMessages || [])]}
             tools={{
               collapseToolMessages: context?.hasToolEvents !== false,
+            }}
+            labels={{
+              show: false,
             }}
           />
         </EventSection>
