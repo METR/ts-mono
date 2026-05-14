@@ -27,3 +27,10 @@ export type {
 
 // State Store
 export { initializeStore } from "./state/store";
+
+// Selection hooks
+export {
+  useSelectedSampleSummary,
+  useSelectedScores,
+  useLogSelection,
+} from "./state/hooks";
