@@ -751,7 +751,7 @@ export interface components {
              */
             role: "assistant";
             /** Source */
-            source?: ("input" | "generate") | null;
+            source?: ("input" | "generate" | "operator") | null;
             /** Tool Calls */
             tool_calls?: components["schemas"]["ToolCall"][] | null;
         };
@@ -775,7 +775,7 @@ export interface components {
              */
             role: "system";
             /** Source */
-            source?: ("input" | "generate") | null;
+            source?: ("input" | "generate" | "operator") | null;
         };
         /**
          * ChatMessageTool
@@ -800,7 +800,7 @@ export interface components {
              */
             role: "tool";
             /** Source */
-            source?: ("input" | "generate") | null;
+            source?: ("input" | "generate" | "operator") | null;
             /** Tool Call Id */
             tool_call_id?: string | null;
         };
@@ -824,7 +824,7 @@ export interface components {
              */
             role: "user";
             /** Source */
-            source?: ("input" | "generate") | null;
+            source?: ("input" | "generate" | "operator") | null;
             /** Tool Call Id */
             tool_call_id?: string[] | null;
         };
@@ -1210,6 +1210,8 @@ export interface components {
          * @description Configuration used for evaluation.
          */
         EvalConfig: {
+            /** Acp Server */
+            acp_server?: boolean | number | string | null;
             approval?: components["schemas"]["ApprovalPolicyConfig"] | null;
             /** Continue On Fail */
             continue_on_fail?: boolean | null;
@@ -1430,7 +1432,7 @@ export interface components {
          */
         EvalRetryError: {
             /** Events */
-            events?: (components["schemas"]["SampleInitEvent"] | components["schemas"]["SampleLimitEvent"] | components["schemas"]["SandboxEvent"] | components["schemas"]["StateEvent"] | components["schemas"]["StoreEvent"] | components["schemas"]["ModelEvent"] | components["schemas"]["ToolEvent"] | components["schemas"]["AnchorEvent"] | components["schemas"]["ApprovalEvent"] | components["schemas"]["BranchEvent"] | components["schemas"]["CompactionEvent"] | components["schemas"]["InputEvent"] | components["schemas"]["ScoreEvent"] | components["schemas"]["ScoreEditEvent"] | components["schemas"]["ErrorEvent"] | components["schemas"]["LoggerEvent"] | components["schemas"]["InfoEvent"] | components["schemas"]["SpanBeginEvent"] | components["schemas"]["SpanEndEvent"] | components["schemas"]["StepEvent"] | components["schemas"]["SubtaskEvent"])[] | null;
+            events?: (components["schemas"]["SampleInitEvent"] | components["schemas"]["SampleLimitEvent"] | components["schemas"]["SandboxEvent"] | components["schemas"]["StateEvent"] | components["schemas"]["StoreEvent"] | components["schemas"]["ModelEvent"] | components["schemas"]["ToolEvent"] | components["schemas"]["AnchorEvent"] | components["schemas"]["ApprovalEvent"] | components["schemas"]["BranchEvent"] | components["schemas"]["CompactionEvent"] | components["schemas"]["InputEvent"] | components["schemas"]["InterruptEvent"] | components["schemas"]["ScoreEvent"] | components["schemas"]["ScoreEditEvent"] | components["schemas"]["ErrorEvent"] | components["schemas"]["LoggerEvent"] | components["schemas"]["InfoEvent"] | components["schemas"]["SpanBeginEvent"] | components["schemas"]["SpanEndEvent"] | components["schemas"]["StepEvent"] | components["schemas"]["SubtaskEvent"])[] | null;
             /** Message */
             message: string;
             /** Traceback */
@@ -1474,7 +1476,7 @@ export interface components {
             /** Error Retries */
             error_retries?: components["schemas"]["EvalRetryError"][] | null;
             /** Events */
-            events: (components["schemas"]["SampleInitEvent"] | components["schemas"]["SampleLimitEvent"] | components["schemas"]["SandboxEvent"] | components["schemas"]["StateEvent"] | components["schemas"]["StoreEvent"] | components["schemas"]["ModelEvent"] | components["schemas"]["ToolEvent"] | components["schemas"]["AnchorEvent"] | components["schemas"]["ApprovalEvent"] | components["schemas"]["BranchEvent"] | components["schemas"]["CompactionEvent"] | components["schemas"]["InputEvent"] | components["schemas"]["ScoreEvent"] | components["schemas"]["ScoreEditEvent"] | components["schemas"]["ErrorEvent"] | components["schemas"]["LoggerEvent"] | components["schemas"]["InfoEvent"] | components["schemas"]["SpanBeginEvent"] | components["schemas"]["SpanEndEvent"] | components["schemas"]["StepEvent"] | components["schemas"]["SubtaskEvent"])[];
+            events: (components["schemas"]["SampleInitEvent"] | components["schemas"]["SampleLimitEvent"] | components["schemas"]["SandboxEvent"] | components["schemas"]["StateEvent"] | components["schemas"]["StoreEvent"] | components["schemas"]["ModelEvent"] | components["schemas"]["ToolEvent"] | components["schemas"]["AnchorEvent"] | components["schemas"]["ApprovalEvent"] | components["schemas"]["BranchEvent"] | components["schemas"]["CompactionEvent"] | components["schemas"]["InputEvent"] | components["schemas"]["InterruptEvent"] | components["schemas"]["ScoreEvent"] | components["schemas"]["ScoreEditEvent"] | components["schemas"]["ErrorEvent"] | components["schemas"]["LoggerEvent"] | components["schemas"]["InfoEvent"] | components["schemas"]["SpanBeginEvent"] | components["schemas"]["SpanEndEvent"] | components["schemas"]["StepEvent"] | components["schemas"]["SubtaskEvent"])[];
             events_data?: components["schemas"]["EventsData"] | null;
             /** Files */
             files?: string[] | null;
@@ -1812,7 +1814,7 @@ export interface components {
             started_at: string | "";
         };
         /** Event */
-        Event: components["schemas"]["SampleInitEvent"] | components["schemas"]["SampleLimitEvent"] | components["schemas"]["SandboxEvent"] | components["schemas"]["StateEvent"] | components["schemas"]["StoreEvent"] | components["schemas"]["ModelEvent"] | components["schemas"]["ToolEvent"] | components["schemas"]["AnchorEvent"] | components["schemas"]["ApprovalEvent"] | components["schemas"]["BranchEvent"] | components["schemas"]["CompactionEvent"] | components["schemas"]["InputEvent"] | components["schemas"]["ScoreEvent"] | components["schemas"]["ScoreEditEvent"] | components["schemas"]["ErrorEvent"] | components["schemas"]["LoggerEvent"] | components["schemas"]["InfoEvent"] | components["schemas"]["SpanBeginEvent"] | components["schemas"]["SpanEndEvent"] | components["schemas"]["StepEvent"] | components["schemas"]["SubtaskEvent"];
+        Event: components["schemas"]["SampleInitEvent"] | components["schemas"]["SampleLimitEvent"] | components["schemas"]["SandboxEvent"] | components["schemas"]["StateEvent"] | components["schemas"]["StoreEvent"] | components["schemas"]["ModelEvent"] | components["schemas"]["ToolEvent"] | components["schemas"]["AnchorEvent"] | components["schemas"]["ApprovalEvent"] | components["schemas"]["BranchEvent"] | components["schemas"]["CompactionEvent"] | components["schemas"]["InputEvent"] | components["schemas"]["InterruptEvent"] | components["schemas"]["ScoreEvent"] | components["schemas"]["ScoreEditEvent"] | components["schemas"]["ErrorEvent"] | components["schemas"]["LoggerEvent"] | components["schemas"]["InfoEvent"] | components["schemas"]["SpanBeginEvent"] | components["schemas"]["SpanEndEvent"] | components["schemas"]["StepEvent"] | components["schemas"]["SubtaskEvent"];
         /** EventData */
         EventData: {
             /** Epoch */
@@ -2046,6 +2048,61 @@ export interface components {
             } | null;
             /** Pending */
             pending?: boolean | null;
+            /** Span Id */
+            span_id?: string | null;
+            /** Timestamp */
+            timestamp: string;
+            /** Uuid */
+            uuid?: string | null;
+            /** Working Start */
+            working_start: number;
+        };
+        /**
+         * InterruptEvent
+         * @description Records that an agent's turn or sample was cut short.
+         *
+         *     Emitted in three cases:
+         *
+         *     - ``source="user_cancel"`` — an ACP client (e.g. an editor or TUI)
+         *       called ``session/cancel`` while a turn was in flight.
+         *     - ``source="limit"`` — a sample-level limit (tokens, time, cost,
+         *       messages) tripped during execution.
+         *     - ``source="system"`` — the eval is shutting down for an external
+         *       reason and is cancelling active samples.
+         *
+         *     The ``interrupted`` field records what was running at the moment
+         *     the cancel reached the cancel scope. ``interrupted_tool_call_id``
+         *     and ``interrupted_model_event_id`` give cross-references when
+         *     applicable so downstream consumers can correlate this event with
+         *     the in-flight ``ToolEvent`` or ``ModelEvent``.
+         */
+        InterruptEvent: {
+            /**
+             * Event
+             * @default interrupt
+             * @constant
+             */
+            event: "interrupt";
+            /**
+             * Interrupted
+             * @enum {string}
+             */
+            interrupted: "generate" | "tool_call" | "between_turns";
+            /** Interrupted Model Event Id */
+            interrupted_model_event_id?: string | null;
+            /** Interrupted Tool Call Id */
+            interrupted_tool_call_id?: string | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Pending */
+            pending?: boolean | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user_cancel" | "limit" | "system";
             /** Span Id */
             span_id?: string | null;
             /** Timestamp */
@@ -3422,7 +3479,7 @@ export interface components {
              * Type
              * @enum {string}
              */
-            type: "parsing" | "timeout" | "unicode_decode" | "permission" | "file_not_found" | "is_a_directory" | "limit" | "approval" | "unknown" | "output_limit";
+            type: "parsing" | "timeout" | "unicode_decode" | "permission" | "file_not_found" | "is_a_directory" | "limit" | "approval" | "cancelled" | "unknown" | "output_limit";
         };
         /**
          * ToolCallView
