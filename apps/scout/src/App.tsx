@@ -1,6 +1,10 @@
 import { createContext, FC, useEffect, useMemo } from "react";
 import { RouterProvider } from "react-router-dom";
 
+import "@vscode/codicons/dist/codicon.css";
+import "bootstrap-icons/font/bootstrap-icons.css";
+import "bootstrap/dist/css/bootstrap.min.css";
+
 import "prismjs";
 import "prismjs/components/prism-bash";
 import "prismjs/components/prism-clike";
