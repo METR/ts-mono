@@ -102,6 +102,12 @@ export class TimelineSpan {
   branchedFrom: string | null;
   description?: string;
   utility: boolean;
+  // True if this agent span was invoked as a tool (via the agent tool /
+  // task / as_tool / handoff). Tool-invoked subagents are explicit
+  // user-intended sub-trajectories and are never classified as `utility`,
+  // even when single-turn (e.g. a cancelled background subagent). Mirrors
+  // the Python `TimelineSpan.tool_invoked` flag.
+  toolInvoked: boolean;
   agentResult?: string;
   outline?: Outline;
 
@@ -114,6 +120,7 @@ export class TimelineSpan {
     branchedFrom?: string | null;
     description?: string;
     utility?: boolean;
+    toolInvoked?: boolean;
     agentResult?: string;
     outline?: Outline;
   }) {
@@ -125,6 +132,7 @@ export class TimelineSpan {
     this.branchedFrom = props.branchedFrom ?? null;
     this.description = props.description;
     this.utility = props.utility ?? false;
+    this.toolInvoked = props.toolInvoked ?? false;
     this.agentResult = props.agentResult;
     this.outline = props.outline;
   }
@@ -204,6 +212,7 @@ function pruneEmptyBranches(span: TimelineSpan): TimelineSpan {
     branchedFrom: span.branchedFrom,
     description: span.description,
     utility: span.utility,
+    toolInvoked: span.toolInvoked,
     agentResult: span.agentResult,
     outline: span.outline,
   });
@@ -242,6 +251,7 @@ export function createBranchSpan(
     branchedFrom: branch.branchedFrom,
     description: branch.description,
     utility: branch.utility,
+    toolInvoked: branch.toolInvoked,
     agentResult: branch.agentResult,
     outline: branch.outline,
   });
@@ -362,6 +372,7 @@ function convertServerSpan(
     branches,
     description: server.description ?? undefined,
     utility: server.utility,
+    toolInvoked: server.tool_invoked,
     agentResult: server.agent_result ?? undefined,
     outline: server.outline ?? undefined,
   });
@@ -780,6 +791,8 @@ function eventToNode(event: Event): TimelineEvent | TimelineSpan {
           "agent",
           nestedContent
         );
+        // Spawned by a ToolEvent — explicit user-intended subagent.
+        span.toolInvoked = true;
         // Capture agent result from the spawning ToolEvent
         const agentResult = extractToolEventResult(event.result);
         if (agentResult) {
@@ -1045,6 +1058,12 @@ function unrollSpan(
   // Emit span begin event
   into.push(createTimelineEvent(span.beginEvent));
 
+  // An agent span discovered as a direct child of a tool span being
+  // unrolled was invoked as a tool (the agent tool / task / as_tool /
+  // handoff). Mark it so classifyUtilityAgents leaves it alone — tool-invoked
+  // subagents are explicit user intent, not internal helper calls.
+  const parentIsTool = span.type === "tool";
+
   // Process children: recurse into non-agent spans, keep agent spans
   for (const child of span.children) {
     if (isSpanNode(child)) {
@@ -1052,6 +1071,9 @@ function unrollSpan(
         const node = treeItemToNode(child);
         if (node === null) continue;
         if (node.type === "span" && node.content.length === 0) continue;
+        if (parentIsTool && node.type === "span") {
+          node.toolInvoked = true;
+        }
         into.push(node);
       } else {
         unrollSpan(child, into);
@@ -1467,8 +1489,16 @@ function classifyUtilityAgents(
 ): void {
   const agentSystemPrompt = getSystemPrompt(node);
 
-  // Classify this node (root agent is never utility)
-  if (parentSystemPrompt !== null && agentSystemPrompt !== null) {
+  // Classify this node (root agent is never utility). Tool-invoked subagents
+  // (the agent tool / task / as_tool / handoff) are explicit user-intended
+  // sub-trajectories — never utility — even when single-turn (e.g. a cancelled
+  // background subagent). Foreign-prompt helper calls are handled separately
+  // by wrapUtilityEvents.
+  if (
+    parentSystemPrompt !== null &&
+    agentSystemPrompt !== null &&
+    !node.toolInvoked
+  ) {
     if (agentSystemPrompt !== parentSystemPrompt && isSingleTurn(node)) {
       node.utility = true;
     }

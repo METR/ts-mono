@@ -44,6 +44,23 @@ export const resolveToolInput = (
     };
   }
 
+  // Inspect deepagent background lifecycle tools return markdown status blocks
+  // (the call-line title is supplied by their server-side ToolCallViewer).
+  if (
+    fn === "agent_status" ||
+    fn === "agent_wait" ||
+    fn === "agent_cancel" ||
+    fn === "agent_list"
+  ) {
+    return {
+      name: fn,
+      functionCall,
+      input,
+      description,
+      contentType: "markdown",
+    };
+  }
+
   return {
     name: fn,
     functionCall,
