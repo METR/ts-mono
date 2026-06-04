@@ -21,9 +21,10 @@ import type {
 import { GeneratingIndicator } from "../indicators/GeneratingIndicator";
 import { isLivePlaceholderMessage } from "../indicators/livePlaceholder";
 
-import { ChatMessageRow } from "./ChatMessageRow";
+import { ChatMessageRow, countRowBlocks } from "./ChatMessageRow";
 import styles from "./ChatViewVirtualList.module.css";
 import { computeMaxLabelLength } from "./labelLength";
+import { MessageLabel } from "./MessageLabel";
 import { ResolvedMessage, resolveMessages } from "./messages";
 import { messageSearchText } from "./messageSearchText";
 import {
@@ -127,6 +128,17 @@ export const ChatViewVirtualList: FC<ChatViewVirtualListProps> = memo(
       [labels?.messageLabels]
     );
 
+    const toolCallStyle = tools?.callStyle ?? "complete";
+    const rowStartNumbers = useMemo(() => {
+      const starts: number[] = [];
+      let next = 1;
+      for (const msg of collapsedMessages) {
+        starts.push(next);
+        next += countRowBlocks(msg, toolCallStyle);
+      }
+      return starts;
+    }, [collapsedMessages, toolCallStyle]);
+
     const lastIndex = collapsedMessages.length - 1;
     const renderRow = useCallback(
       (index: number, item: ResolvedMessage): ReactNode => {
@@ -137,18 +149,14 @@ export const ChatViewVirtualList: FC<ChatViewVirtualListProps> = memo(
         ) {
           return (
             <div className={styles.generatingRow}>
-              <div
-                className={clsx(
-                  "text-size-smaller",
-                  "text-style-secondary",
-                  styles.generatingLabel
-                )}
-                style={{ minWidth: `${maxLabelLength ?? 3}ch` }}
-              >
-                {index + 1}
-              </div>
               <div className={styles.generatingContent}>
                 <GeneratingIndicator />
+              </div>
+              <div
+                className={styles.generatingLabel}
+                style={{ minWidth: `${maxLabelLength ?? 3}ch` }}
+              >
+                <MessageLabel label={`${index + 1}`} />
               </div>
             </div>
           );
@@ -163,10 +171,21 @@ export const ChatViewVirtualList: FC<ChatViewVirtualListProps> = memo(
             linking={linking}
             tools={tools}
             maxLabelLength={maxLabelLength}
+            startNumber={rowStartNumbers[index]}
           />
         );
       },
-      [id, running, lastIndex, display, labels, linking, tools, maxLabelLength]
+      [
+        id,
+        running,
+        lastIndex,
+        display,
+        labels,
+        linking,
+        tools,
+        maxLabelLength,
+        rowStartNumbers,
+      ]
     );
 
     return (

@@ -35,6 +35,9 @@ importers:
       '@tsmono/prettier-config':
         specifier: workspace:*
         version: link:tooling/prettier-config
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.0
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
@@ -412,9 +415,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.0.2
         version: 6.0.2(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(less@4.5.1)(sass@1.97.3)(stylus@0.62.0)(yaml@2.8.3))
-      esbuild:
-        specifier: 0.28.0
-        version: 0.28.0
       eslint:
         specifier: ^9.39.4
         version: 9.39.4
@@ -506,6 +506,9 @@ importers:
       '@tsmono/react':
         specifier: workspace:*
         version: link:../react
+      '@tsmono/theme':
+        specifier: workspace:*
+        version: link:../theme
       '@tsmono/util':
         specifier: workspace:*
         version: link:../util
@@ -753,7 +756,26 @@ importers:
         specifier: ^4.1.7
         version: 4.1.7(@types/node@25.9.1)(jsdom@29.1.1)(msw@2.14.6(@types/node@25.9.1)(typescript@6.0.3))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(less@4.5.1)(sass@1.97.3)(stylus@0.62.0)(yaml@2.8.3))
 
-  packages/theme: {}
+  packages/theme:
+    devDependencies:
+      '@tsmono/eslint-config':
+        specifier: workspace:*
+        version: link:../../tooling/eslint-config
+      '@tsmono/tsconfig':
+        specifier: workspace:*
+        version: link:../../tooling/tsconfig
+      eslint:
+        specifier: ^9.39.4
+        version: 9.39.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      typescript-eslint:
+        specifier: ^8.60.0
+        version: 8.60.0(eslint@9.39.4)(typescript@6.0.3)
+      vitest:
+        specifier: ^4.1.7
+        version: 4.1.7(@types/node@25.9.1)(jsdom@29.1.1)(msw@2.14.6(@types/node@25.9.1)(typescript@6.0.3))(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(less@4.5.1)(sass@1.97.3)(stylus@0.62.0)(yaml@2.8.3))
 
   packages/util:
     devDependencies:
