@@ -19,12 +19,14 @@ import type {
 } from "@tsmono/react/virtual";
 
 import { GeneratingIndicator } from "../indicators/GeneratingIndicator";
-import { isLivePlaceholderMessage } from "../indicators/livePlaceholder";
+import {
+  isLivePlaceholderMessage,
+  isToolExecutingMessage,
+} from "../indicators/livePlaceholder";
 
 import { ChatMessageRow, countRowBlocks } from "./ChatMessageRow";
 import styles from "./ChatViewVirtualList.module.css";
 import { computeMaxLabelLength } from "./labelLength";
-import { MessageLabel } from "./MessageLabel";
 import { ResolvedMessage, resolveMessages } from "./messages";
 import { messageSearchText } from "./messageSearchText";
 import {
@@ -149,30 +151,33 @@ export const ChatViewVirtualList: FC<ChatViewVirtualListProps> = memo(
         ) {
           return (
             <div className={styles.generatingRow}>
-              <div className={styles.generatingContent}>
-                <GeneratingIndicator />
-              </div>
-              <div
-                className={styles.generatingLabel}
-                style={{ minWidth: `${maxLabelLength ?? 3}ch` }}
-              >
-                <MessageLabel label={`${index + 1}`} />
-              </div>
+              <GeneratingIndicator />
             </div>
           );
         }
+        const toolExecuting =
+          running &&
+          index === lastIndex &&
+          isToolExecutingMessage(item.message, item.toolMessages.length);
         return (
-          <ChatMessageRow
-            index={index}
-            parentName={id || "chat-virtual-list"}
-            resolvedMessage={item}
-            display={display}
-            labels={labels}
-            linking={linking}
-            tools={tools}
-            maxLabelLength={maxLabelLength}
-            startNumber={rowStartNumbers[index]}
-          />
+          <>
+            <ChatMessageRow
+              index={index}
+              parentName={id || "chat-virtual-list"}
+              resolvedMessage={item}
+              display={display}
+              labels={labels}
+              linking={linking}
+              tools={tools}
+              maxLabelLength={maxLabelLength}
+              startNumber={rowStartNumbers[index]}
+            />
+            {toolExecuting ? (
+              <div className={styles.generatingRow}>
+                <GeneratingIndicator label="running" />
+              </div>
+            ) : null}
+          </>
         );
       },
       [
