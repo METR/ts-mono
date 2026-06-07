@@ -75,17 +75,21 @@ export const ModelEventView: FC<ModelEventViewProps> = ({
   delete entries["max_connections"];
 
   // Stop reason / refusal detail for the (primary) generated choice. `category`
-  // and `explanation` are only present on a refusal/content-filter stop.
+  // and `explanation` are only present on a refusal/content-filter stop. Skip the
+  // panel for a plain "stop" with no details — otherwise it shows on every call.
   const firstChoice = event.output?.choices?.[0];
+  const stopDetails = firstChoice?.stop_details;
+  const showStopReason =
+    !!firstChoice && (!!stopDetails || firstChoice.stop_reason !== "stop");
   const stopEntries: Record<string, unknown> = {};
-  if (firstChoice?.stop_reason) {
+  if (showStopReason) {
     stopEntries["stop reason"] = firstChoice.stop_reason;
-  }
-  if (firstChoice?.stop_details?.category) {
-    stopEntries["category"] = firstChoice.stop_details.category;
-  }
-  if (firstChoice?.stop_details?.explanation) {
-    stopEntries["explanation"] = firstChoice.stop_details.explanation;
+    if (stopDetails?.category) {
+      stopEntries["category"] = stopDetails.category;
+    }
+    if (stopDetails?.explanation) {
+      stopEntries["explanation"] = stopDetails.explanation;
+    }
   }
 
   // For any user messages which immediately preceded this model call, including a
