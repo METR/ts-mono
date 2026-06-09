@@ -1,5 +1,6 @@
 import JSON5 from "json5";
 
+import { AppConfig } from "@tsmono/inspect-common/types";
 import { dirname, getVscodeApi } from "@tsmono/util";
 
 import { clientApi } from "./client-api";
@@ -27,7 +28,19 @@ const resolveApi = (): ClientAPI => {
         const data = JSON5.parse(context);
         if (data.log_dir || data.log_file) {
           const log_dir = data.log_dir || dirname(data.log_file);
-          const api = staticHttpApi(log_dir, data.log_file, data.abs_log_dir);
+          const app_config: AppConfig | undefined =
+            data.inspect_version !== undefined
+              ? {
+                  inspect_version: data.inspect_version,
+                  scout_version: null,
+                }
+              : undefined;
+          const api = staticHttpApi(
+            log_dir,
+            data.log_file,
+            data.abs_log_dir,
+            app_config
+          );
           return clientApi(api, data.log_file, debug);
         }
       }
