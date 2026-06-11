@@ -23,6 +23,7 @@ import type {
   LogUpdate,
   MessagePoolData,
   ModelEvent,
+  ModelFallback,
   ModelUsage,
   SampleInitEvent,
   SampleLimitEvent,
@@ -132,6 +133,7 @@ export interface SampleSummary {
   // Per-sample timing and token usage; populated by Inspect's Python
   // EvalSampleSummary.summary() and serialized into summaries.json.
   model_usage?: Record<string, ModelUsage>;
+  model_fallbacks?: ModelFallback[] | null;
   started_at?: string | null;
   completed_at?: string | null;
   total_time?: number | null;

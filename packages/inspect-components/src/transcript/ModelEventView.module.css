@@ -101,3 +101,7 @@
   padding-top: 0.5em;
   overflow-wrap: anywhere;
 }
+
+.fallbackBadge {
+  font-style: italic;
+}
