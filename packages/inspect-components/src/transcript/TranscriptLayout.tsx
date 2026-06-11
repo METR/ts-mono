@@ -183,6 +183,8 @@ export interface TranscriptLayoutProps {
 
   /** Text shown when no events match the current filter. Pass null to disable empty state. */
   emptyText?: string | null;
+  /** Render the empty state as an in-progress placeholder (animated, no icon). */
+  emptyBusy?: boolean;
   className?: string;
 }
 
@@ -304,6 +306,7 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
   rightPaneScrollRef,
   eventNodeContext,
   emptyText = "No events match the current filter",
+  emptyBusy,
   className,
 }) => {
   // ---------------------------------------------------------------------------
@@ -357,6 +360,7 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
     sourceSpans,
     minimapSelection,
     hasTimeline,
+    hasAgentTimeline,
     timelines,
     activeTimelineIndex,
     setActiveTimeline,
@@ -395,8 +399,14 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
     ) {
       return true;
     }
-    return hasTimeline ? false : undefined;
-  }, [showSwimlanesOption, hasTimeline, regionCounts]);
+    if (hasTimeline) {
+      // Expand by default only when there's agent sub-structure to drill into.
+      // A bare main + scoring (or init) timeline has nothing to expand, so
+      // default it collapsed.
+      return hasAgentTimeline ? false : true;
+    }
+    return undefined;
+  }, [showSwimlanesOption, hasTimeline, hasAgentTimeline, regionCounts]);
 
   // ---------------------------------------------------------------------------
   // Event nodes
@@ -1109,7 +1119,7 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
                 eventNodeContext={mergedEventNodeContext}
               />
             ) : emptyText !== null ? (
-              <NoContentsPanel text={emptyText} />
+              <NoContentsPanel text={emptyText} busy={emptyBusy} />
             ) : null}
             {rightPane && (
               <>

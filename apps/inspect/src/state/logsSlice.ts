@@ -81,7 +81,6 @@ export interface LogsSlice {
     setDisplayedSamples: (samples: Array<DisplayedSample>) => void;
     clearDisplayedSamples: () => void;
     setPreviousSamplesPath: (path: string | undefined) => void;
-    setShowRetriedLogs: (showRetriedLogs: boolean) => void;
   };
 }
 
@@ -107,7 +106,6 @@ const initialState: LogsState = {
     },
     byLog: {},
   },
-  showRetriedLogs: false,
 };
 
 export const createLogsSlice = (
@@ -271,10 +269,7 @@ export const createLogsSlice = (
       },
       syncLogs: async () => {
         const databaseService = get().databaseService;
-        const useProgress = !!databaseService?.getDatabaseHandle();
-        if (useProgress) {
-          get().appActions.setLoading(true);
-        }
+        get().appActions.setLoading(true);
 
         // Determine the log directory
         const logDir = await get().logsActions.initLogDir();
@@ -304,16 +299,18 @@ export const createLogsSlice = (
               return databaseService;
             } catch (e) {
               console.log(e);
-              if (useProgress) {
-                get().appActions.setLoading(false, e as Error);
-              }
+              get().appActions.setLoading(false, e as Error);
               return;
             }
           };
 
-          // Don't enable syncing if there is no log directory
+          // Don't enable syncing if there is no log directory.
+          // initLogDir may have already called setLoading(false, e) via its own
+          // catch block; the counter is clamped at zero so the extra decrement
+          // here is safe, and we avoid overwriting a non-null error by only
+          // calling setLoading(false) when no error was already recorded.
           if (!logDir || isSingleFileMode) {
-            if (useProgress) {
+            if (!get().app.status.error) {
               get().appActions.setLoading(false);
             }
             return [];
@@ -378,9 +375,7 @@ export const createLogsSlice = (
           );
         }
 
-        if (useProgress) {
-          get().appActions.setLoading(false);
-        }
+        get().appActions.setLoading(false);
 
         // Sync
         return (await get().replicationService?.sync(initDatabase)) || [];
@@ -506,11 +501,6 @@ export const createLogsSlice = (
           log.debug("Sample query failed, returning empty results");
           return [];
         }
-      },
-      setShowRetriedLogs: (showRetriedLogs: boolean) => {
-        set((state) => {
-          state.logs.showRetriedLogs = showRetriedLogs;
-        });
       },
     },
   } as const;

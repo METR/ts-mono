@@ -92,6 +92,8 @@ export type ModelFallback = S["ModelFallback"];
 export type ModelOutput = S["ModelOutput"];
 export type ModelUsage = S["ModelUsage"];
 export type ChatCompletionChoice = S["ChatCompletionChoice"];
+export type StopDetails = S["StopDetails"];
+export type StopCategory = S["StopCategory"];
 export type Logprob = S["Logprob"];
 export type Logprobs = S["Logprobs"];
 export type TopLogprob = S["TopLogprob"];
@@ -136,6 +138,7 @@ export type ApprovalPolicyConfig = S["ApprovalPolicyConfig"];
 export type ApproverPolicyConfig = S["ApproverPolicyConfig"];
 
 // Server response types
+export type AppConfig = S["AppConfig"];
 export type AttachmentData = S["AttachmentData"];
 export type CallPoolData = S["CallPoolData"];
 export type EventData = S["EventData"];

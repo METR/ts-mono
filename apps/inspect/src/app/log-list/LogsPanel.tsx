@@ -1,10 +1,18 @@
 import { AgGridReact } from "ag-grid-react";
 import clsx from "clsx";
-import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FC,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 import { EvalSet } from "@tsmono/inspect-common/types";
-import { ProgressBar } from "@tsmono/react/components";
+import { ErrorPanel, ProgressBar } from "@tsmono/react/components";
 import { useProperty } from "@tsmono/react/hooks";
 import { dirname, isInDirectory } from "@tsmono/util";
 
@@ -16,6 +24,7 @@ import {
   useLogsWithretried,
 } from "../../state/hooks";
 import { useStore } from "../../state/store";
+import { useUserSettings } from "../../state/userSettings";
 import { directoryRelativeUrl, join } from "../../utils/uri";
 import { ApplicationIcons } from "../appearance/icons";
 import { FlowButton } from "../flow/FlowButton";
@@ -57,17 +66,21 @@ export const LogsPanel: FC<LogsPanelProps> = ({
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const columnButtonRef = useRef<HTMLButtonElement>(null);
 
-  const showRetriedLogs = useStore((state) => state.logs.showRetriedLogs);
-  const setShowRetriedLogs = useStore(
-    (state) => state.logsActions.setShowRetriedLogs
+  const showRetriedLogs = useUserSettings((state) => state.showRetriedLogs);
+  const setShowRetriedLogs = useUserSettings(
+    (state) => state.setShowRetriedLogs
   );
   const logDir = useStore((state) => state.logs.logDir);
   const logFiles = useLogsWithretried();
   const evalSet = useStore((state) => state.logs.evalSet);
   const logPreviews = useStore((state) => state.logs.logPreviews);
+  // Defer previews so the burst of preview flushes during initial sync
+  // can't block input — see the matching note in LogListGrid.
+  const deferredLogPreviews = useDeferredValue(logPreviews);
   const { filteredCount } = useLogsListing();
 
   const syncing = useStore((state) => state.app.status.syncing);
+  const error = useStore((state) => state.app.status.error);
 
   const watchedLogs = useStore((state) => state.logs.listing.watchedLogs);
   const navigate = useNavigate();
@@ -153,7 +166,7 @@ export const LogsPanel: FC<LogsPanelProps> = ({
             type: "file",
             url: tasksUrl(decodedPath, logDir),
             log: logFile,
-            logPreview: logPreviews[logFile.name],
+            logPreview: deferredLogPreviews[logFile.name],
           });
         }
       }
@@ -175,6 +188,23 @@ export const LogsPanel: FC<LogsPanelProps> = ({
     const processedFolders = new Set<string>();
     const existingLogTaskIds = new Set<string>();
     let _hasRetriedLogs = false;
+
+    // Count logs under a path prefix via binary search rather than a full
+    // scan per folder (which made folder counting O(folders × logs)). Names
+    // sort into contiguous ranges, so a prefix count is two bound lookups.
+    const sortedNames = logFiles.map((f) => f.name).sort();
+    const lowerBound = (target: string): number => {
+      let lo = 0;
+      let hi = sortedNames.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (sortedNames[mid] < target) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
+    const countWithPrefix = (prefix: string): number =>
+      lowerBound(prefix + "\uffff") - lowerBound(prefix);
 
     for (const logFile of logFiles) {
       if (logFile.task_id) {
@@ -212,7 +242,7 @@ export const LogsPanel: FC<LogsPanelProps> = ({
             type: "file",
             url: logsUrl(path, logDir),
             log: logFile,
-            logPreview: logPreviews[logFile.name],
+            logPreview: deferredLogPreviews[logFile.name],
           });
         }
       } else if (name.startsWith(dirWithSlash)) {
@@ -228,9 +258,7 @@ export const LogsPanel: FC<LogsPanelProps> = ({
             name: dirName,
             type: "folder",
             url: logsUrl(url, logDir),
-            itemCount: logFiles.filter((file) =>
-              file.name.startsWith(dirname(name))
-            ).length,
+            itemCount: countWithPrefix(dirname(name)),
           });
           processedFolders.add(dirName);
         }
@@ -252,7 +280,7 @@ export const LogsPanel: FC<LogsPanelProps> = ({
     logFiles,
     currentDir,
     logDir,
-    logPreviews,
+    deferredLogPreviews,
     showRetriedLogs,
   ]);
 
@@ -425,32 +453,39 @@ export const LogsPanel: FC<LogsPanelProps> = ({
         onScoresViewModeChange={setScoresViewMode}
       />
 
-      <>
-        <div className={clsx(styles.list, "text-size-smaller")}>
-          <LogListGrid
-            items={logItems}
-            currentPath={currentDir}
-            scopeKey={scopeKey}
-            gridRef={gridRef}
-            mode={mode}
-          />
-        </div>
-        <LogListFooter
-          itemCount={logItems.length}
-          filteredCount={filteredCount}
-          progressText={syncing ? "Syncing data" : undefined}
-          progressBar={
-            progress.total !== progress.complete ? (
-              <ProgressBar
-                min={0}
-                max={progress.total}
-                value={progress.complete}
-                width="100px"
-              />
-            ) : undefined
-          }
+      {error ? (
+        <ErrorPanel
+          title="Error"
+          error={{ message: error.message, stack: error.stack }}
         />
-      </>
+      ) : (
+        <>
+          <div className={clsx(styles.list, "text-size-smaller")}>
+            <LogListGrid
+              items={logItems}
+              currentPath={currentDir}
+              scopeKey={scopeKey}
+              gridRef={gridRef}
+              mode={mode}
+            />
+          </div>
+          <LogListFooter
+            itemCount={logItems.length}
+            filteredCount={filteredCount}
+            progressText={syncing ? "Syncing data" : undefined}
+            progressBar={
+              progress.total !== progress.complete ? (
+                <ProgressBar
+                  min={0}
+                  max={progress.total}
+                  value={progress.complete}
+                  width="100px"
+                />
+              ) : undefined
+            }
+          />
+        </>
+      )}
     </div>
   );
 };
