@@ -524,7 +524,7 @@ export interface components {
             max: number;
             /**
              * Min
-             * @default 4
+             * @default 10
              */
             min: number;
             /**
