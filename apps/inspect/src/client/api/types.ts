@@ -88,6 +88,7 @@ export interface SampleDataResponse {
   sampleData?: SampleData;
   status: "NotModified" | "NotFound" | "OK";
   has_more?: boolean;
+  complete?: boolean;
 }
 
 export interface SegmentRef {
@@ -98,8 +99,8 @@ export interface SegmentRef {
 
 export interface PendingSampleUrls {
   segments: SegmentRef[];
-  complete: boolean;
-  has_more: boolean;
+  complete?: boolean;
+  has_more?: boolean;
 }
 
 // Client-side types — looser than generated server types because they're
