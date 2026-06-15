@@ -87,6 +87,74 @@ export function resolveMessageInBranches(
   return undefined;
 }
 
+/**
+ * Resolves an event id (event uuid or span node id) to its swimlane target
+ * in the main content tree: the *innermost* enclosing agent span (if any)
+ * whose row must be selected before the event list contains the target.
+ *
+ * The event-id analogue of `resolveMessageToEvent`, but matching node
+ * identity instead of message ids, and resolving to the deepest agent row
+ * rather than one level down — every nested agent has its own selectable
+ * row, so the deepest one is what renders the target inline.
+ */
+export function resolveEventToSpan(
+  eventId: string,
+  root: TimelineSpan
+): ResolvedMessageEvent | undefined {
+  return walkContentForEvent(eventId, root.content, null);
+}
+
+/**
+ * Branch fallback for `resolveEventToSpan` — walks every branch row and
+ * returns the first hit along with the branch's swimlane row key.
+ */
+export function resolveEventInBranches(
+  eventId: string,
+  root: TimelineSpan
+): ResolvedMessageEvent | undefined {
+  const rows = computeFlatSwimlaneRows(root, {
+    includeUtility: true,
+    showBranches: true,
+  });
+
+  for (const row of rows) {
+    if (!row.branch) continue;
+    for (const rowSpan of row.spans) {
+      const agents = isSingleSpan(rowSpan) ? [rowSpan.agent] : rowSpan.agents;
+      for (const agent of agents) {
+        const match = walkContentForEvent(eventId, agent.content, null);
+        if (match) {
+          return { ...match, branchRowKey: row.key };
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function walkContentForEvent(
+  eventId: string,
+  content: ReadonlyArray<TimelineEvent | TimelineSpan>,
+  agentContext: string | null
+): ResolvedMessageEvent | undefined {
+  for (const item of content) {
+    if (item.type === "event") {
+      const uuid = (item.event as { uuid?: string | null }).uuid;
+      if (uuid === eventId) return { eventId, agentSpanId: agentContext };
+    } else {
+      // Track the *innermost* enclosing agent: every agent at every depth
+      // gets its own selectable swimlane row, and selecting an outer agent
+      // renders a nested one as a card (not its events). So a deep link must
+      // resolve to the deepest agent row that makes the target inline.
+      const childContext = item.spanType === "agent" ? item.id : agentContext;
+      if (item.id === eventId) return { eventId, agentSpanId: agentContext };
+      const found = walkContentForEvent(eventId, item.content, childContext);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
 // =============================================================================
 // Match priorities — lower number = higher priority
 // =============================================================================

@@ -34,10 +34,17 @@ import type {
 import { NoContentsPanel, StickyScroll } from "@tsmono/react/components";
 import { useScrubberProgress } from "@tsmono/react/hooks";
 
+import {
+  findTimelineIndexForEvent,
+  findTimelineIndexForMessage,
+  timelineContainsEvent,
+} from "./findTimelineForDeepLink";
 import { useListPositionManager } from "./hooks/useListPositionManager";
 import { useStickySwimLaneHeight } from "./hooks/useStickySwimLaneHeight";
 import { TranscriptOutline } from "./outline/TranscriptOutline";
 import {
+  resolveEventInBranches,
+  resolveEventToSpan,
   resolveMessageInBranches,
   resolveMessageToEvent,
 } from "./resolveMessageToEvent";
@@ -636,6 +643,28 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
 
   const resolved = resolvedLocal ?? resolvedRoot;
 
+  // Cross-timeline deep links: if the target lives in a different root
+  // timeline, find it so the effect below can switch to it. -1 = no switch.
+  const deepLinkTimelineIndex = useMemo(() => {
+    if (timelines.length <= 1) return -1;
+    if (initialEventId) {
+      const active = timelines[activeTimelineIndex];
+      if (!active || timelineContainsEvent(initialEventId, active)) return -1;
+      return findTimelineIndexForEvent(initialEventId, timelines);
+    }
+    if (initialMessageId && !resolvedLocal && !resolvedRoot) {
+      return findTimelineIndexForMessage(initialMessageId, timelines);
+    }
+    return -1;
+  }, [
+    initialEventId,
+    initialMessageId,
+    resolvedLocal,
+    resolvedRoot,
+    timelines,
+    activeTimelineIndex,
+  ]);
+
   // Side-effect: switch swimlane selection when resolution comes from root
   // (i.e. requires moving the user to a different row to see the resolved
   // event). Calls `timelineState.select` with `{ preserveDeepLink: true }`
@@ -651,6 +680,10 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
   const prevMessageIdRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (prevMessageIdRef.current === initialMessageId) return;
+    // A cross-timeline switch is pending: don't consume the message id yet —
+    // this effect must re-evaluate after the switch lands and resolution
+    // re-runs against the new root.
+    if (deepLinkTimelineIndex >= 0) return;
     prevMessageIdRef.current = initialMessageId;
     if (!resolvedRoot) return;
     let targetKey: string | null = null;
@@ -661,7 +694,87 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
     }
     if (timelineState.selected === targetKey) return;
     timelineState.select(targetKey, { preserveDeepLink: true });
-  }, [initialMessageId, resolvedRoot, spanSelectKeys, timelineState]);
+  }, [
+    initialMessageId,
+    deepLinkTimelineIndex,
+    resolvedRoot,
+    spanSelectKeys,
+    timelineState,
+  ]);
+
+  // Fire the timeline switch once per deep-link change — a stale `?event=` /
+  // `?message=` param left in the URL must not snap the user back after they
+  // manually switch timelines away.
+  //
+  // Mark the key "consumed" only once we've actually switched. While the
+  // target isn't found yet (index -1 — e.g. timeline data still building or
+  // events still streaming), leave it unconsumed so a later data update with
+  // the same key can still trigger the switch. The snap-back guard still
+  // holds: after a switch, the target resolves in the now-active timeline,
+  // so `deepLinkTimelineIndex` drops to -1 and the consumed key blocks any
+  // re-switch even if the user navigates timelines manually.
+  const prevDeepLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (timelines.length <= 1) return;
+    const key = initialEventId ?? initialMessageId ?? null;
+    if (key === null) {
+      prevDeepLinkRef.current = null;
+      return;
+    }
+    if (prevDeepLinkRef.current === key) return;
+    if (deepLinkTimelineIndex < 0) return;
+    prevDeepLinkRef.current = key;
+    if (deepLinkTimelineIndex === activeTimelineIndex) return;
+    setActiveTimeline(deepLinkTimelineIndex);
+  }, [
+    initialEventId,
+    initialMessageId,
+    deepLinkTimelineIndex,
+    activeTimelineIndex,
+    setActiveTimeline,
+    timelines.length,
+  ]);
+
+  // Event deep links targeting a non-visible swimlane lane: with swimlanes
+  // on, the event list only contains the selected rows' events, so a target
+  // in another agent lane (or branch) is unreachable until that row is
+  // selected. The event-id analogue of the message side-effect above.
+  const resolvedEventSpan = useMemo(() => {
+    if (!initialEventId || !showSwimlanes) return undefined;
+    const present = eventsForNodes.some(
+      (e) => (e as { uuid?: string | null }).uuid === initialEventId
+    );
+    if (present) return undefined;
+    return (
+      resolveEventToSpan(initialEventId, timelineData.root) ??
+      resolveEventInBranches(initialEventId, timelineData.root)
+    );
+  }, [initialEventId, showSwimlanes, eventsForNodes, timelineData.root]);
+
+  const prevEventIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (prevEventIdRef.current === initialEventId) return;
+    // A cross-timeline switch is pending: re-evaluate after it lands.
+    if (deepLinkTimelineIndex >= 0) return;
+    prevEventIdRef.current = initialEventId;
+    if (!resolvedEventSpan) return;
+    let targetKey: string | null = null;
+    if (resolvedEventSpan.branchRowKey) {
+      targetKey = resolvedEventSpan.branchRowKey;
+    } else if (resolvedEventSpan.agentSpanId) {
+      targetKey =
+        spanSelectKeys.get(resolvedEventSpan.agentSpanId)?.key ?? null;
+    }
+    if (!targetKey) return;
+    if (timelineState.selected === targetKey) return;
+    timelineState.select(targetKey, { preserveDeepLink: true });
+  }, [
+    initialEventId,
+    deepLinkTimelineIndex,
+    resolvedEventSpan,
+    spanSelectKeys,
+    timelineState,
+  ]);
 
   const effectiveInitialEventId =
     initialEventId ?? resolved?.eventId ?? branchScrollTarget ?? null;
@@ -728,6 +841,19 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
       collapseState?.transcript,
       defaultCollapsedIds,
     ]
+  );
+
+  // Bulk-expand for deep links into collapsed regions. One batched update —
+  // sequential onCollapseTranscript calls would each re-seed defaults and
+  // clobber the previous call's expansion while the store is unseeded.
+  const onExpandNodes = useCallback(
+    (nodeIds: string[]) => {
+      if (!onSetTranscriptCollapsed) return;
+      const next = { ...(collapseState?.transcript ?? defaultCollapsedIds) };
+      for (const id of nodeIds) next[id] = false;
+      onSetTranscriptCollapsed(next);
+    },
+    [onSetTranscriptCollapsed, collapseState?.transcript, defaultCollapsedIds]
   );
 
   // ---------------------------------------------------------------------------
@@ -1122,6 +1248,9 @@ export const TranscriptLayout: FC<TranscriptLayoutProps> = ({
                 collapsedTranscript={collapseState?.transcript}
                 collapsedOutline={collapseState?.outline}
                 onCollapseTranscript={onCollapseTranscript}
+                onExpandNodes={
+                  onSetTranscriptCollapsed ? onExpandNodes : undefined
+                }
                 eventNodeContext={mergedEventNodeContext}
               />
             ) : emptyText !== null ? (

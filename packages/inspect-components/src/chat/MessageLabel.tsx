@@ -14,6 +14,15 @@ interface MessageLabelProps {
 }
 
 /**
+ * Badge display form of a label: strips the surrounding cite brackets but
+ * keeps the type letter, so "[M4]" → "M4" and "[E58]" → "E58". The full
+ * cite stays in the badge tooltip; inline anchors keep the original text —
+ * they must read like the prose they sit in.
+ */
+export const compactLabel = (label: string): string =>
+  label.replace(/^\[/, "").replace(/\]$/, "");
+
+/**
  * A filled monospace chip used for message position labels (top-right of a
  * message) and as an inline anchor in summary prose.
  */
@@ -32,7 +41,11 @@ export const MessageLabel: FC<MessageLabelProps> = ({
     };
     return (
       <a
-        className={clsx(styles.inline, className)}
+        className={clsx(
+          styles.inline,
+          onActivate && styles.interactive,
+          className
+        )}
         onClick={onActivate}
         onKeyDown={onActivate ? onKeyDown : undefined}
         tabIndex={onActivate ? 0 : undefined}
@@ -42,9 +55,18 @@ export const MessageLabel: FC<MessageLabelProps> = ({
     );
   }
 
+  const compact = compactLabel(label);
   return (
-    <span className={clsx(styles.badge, className)} onClick={onActivate}>
-      {label}
+    <span
+      className={clsx(
+        styles.badge,
+        onActivate && styles.interactive,
+        className
+      )}
+      onClick={onActivate}
+      title={compact === label ? undefined : label}
+    >
+      {compact}
     </span>
   );
 };

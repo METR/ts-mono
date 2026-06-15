@@ -83,11 +83,9 @@
   opacity: 0.75;
 }
 
-/* The event labels look like [E7], and those square brackets sit really low.
-   Sliding them down a little looks more balanced 
-*/
+/* Extra air between the turn label and the event-number pill. */
 .eventLabel {
-  transform: translateY(-1px);
+  margin-left: 0.5em;
 }
 
 .root {
