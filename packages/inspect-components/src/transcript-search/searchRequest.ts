@@ -1,7 +1,8 @@
-import type { SearchRequest } from "../../types/api-types";
+import type { SearchRequest } from "@tsmono/inspect-common/types";
 
-export type SearchType = "grep" | "llm";
-export type TranscriptSearchScope = "events" | "messages";
+import type { SearchResultScope, SearchScope, SearchType } from "./types";
+
+export type { SearchScope, SearchType } from "./types";
 
 export type GrepOptions = {
   ignoreCase: boolean;
@@ -13,18 +14,11 @@ type BuildSearchRequestOptions = {
   grepOptions: GrepOptions;
   model: string;
   query: string;
-  scope: TranscriptSearchScope;
+  scope: SearchScope;
   searchType: SearchType;
 };
 
-export type SearchScopeFields = {
-  events?: "all";
-  messages?: "all";
-};
-
-export const buildSearchScope = (
-  scope: TranscriptSearchScope
-): SearchScopeFields => {
+export const buildSearchScope = (scope: SearchScope): SearchResultScope => {
   return scope === "messages" ? { messages: "all" } : { events: "all" };
 };
 

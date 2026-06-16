@@ -1,8 +1,10 @@
 import clsx from "clsx";
 import {
+  CSSProperties,
   FC,
   Fragment,
   MouseEvent,
+  ReactNode,
   RefObject,
   useCallback,
   useEffect,
@@ -21,7 +23,11 @@ import {
   DisplayModeContext,
   RecordTree,
 } from "@tsmono/inspect-components/content";
-import { eventsToStr } from "@tsmono/inspect-components/transcript";
+import {
+  eventsToStr,
+  type TranscriptLayoutRightRailProps,
+} from "@tsmono/inspect-components/transcript";
+import type { SearchScope } from "@tsmono/inspect-components/transcript-search";
 import {
   buildArgsByModel,
   buildArgsByRole,
@@ -38,13 +44,14 @@ import {
   CardBody,
   CardHeader,
   NoContentsPanel,
+  RailDock,
   StickyScroll,
   TabPanel,
   TabSet,
   ToolButton,
   ToolDropdownButton,
 } from "@tsmono/react/components";
-import { useScrollDirection } from "@tsmono/react/hooks";
+import { useElementHeight, useScrollDirection } from "@tsmono/react/hooks";
 import { isHostedEnvironment, isVscode } from "@tsmono/util";
 
 import { Events } from "../../@types/extraInspect";
@@ -79,6 +86,11 @@ import {
 import { openInNewTab } from "../shared/openInNewTab";
 
 import {
+  ActivityRail,
+  type ActivityRailItem,
+  type ActivityRailItemId,
+} from "./ActivityRail";
+import {
   messagesFromEvents,
   type MessagesFromEventsState,
 } from "./messagesFromEvents";
@@ -86,8 +98,14 @@ import styles from "./SampleDisplay.module.css";
 import { SampleJSONView } from "./SampleJSONView";
 import { SampleRetriedErrors } from "./SampleRetriedErrors";
 import { SampleSummaryView } from "./SampleSummaryView";
+import { ScansSidebarPanel } from "./scans/ScansSidebarPanel";
+import { useSampleScans } from "./scans/useSampleScans";
 import { SampleScoresView } from "./scores/SampleScoresView";
 import { useTranscriptFilter } from "./transcript/hooks";
+import { useInspectSearchContext } from "./transcript/search/inspectSearchAdapters";
+import { mergeTranscriptLabelContext } from "./transcript/search/mergeTranscriptLabelContext";
+import { SearchPanelSlot } from "./transcript/search/SearchPanelSlot";
+import { useInspectSearchReferenceLabels } from "./transcript/search/useInspectSearchReferenceLabels";
 import { TranscriptFilterPopover } from "./transcript/TranscriptFilter";
 import { TranscriptPanel } from "./transcript/TranscriptPanel";
 
@@ -154,24 +172,8 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
   // Navigation hook for URL updates
   const navigate = useNavigate();
 
-  // Ref for the sample tab control bar (the sticky `<ul>`). Its
-  // current height feeds `stickyOffsetTop` for inner stickies (the
-  // transcript timeline, the message list scroll-track, etc.) so they
-  // pin just beneath it. ResizeObserver is the only reliable trigger:
-  // the bar's height can change for non-resize reasons (font load,
-  // text wrapping, tools added/removed).
   const tabsRef: RefObject<HTMLUListElement | null> = useRef(null);
-  const [tabsHeight, setTabsHeight] = useState(-1);
-
-  useEffect(() => {
-    const el = tabsRef.current;
-    if (!el) return;
-    const apply = () => setTabsHeight(el.getBoundingClientRect().height);
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const tabsHeight = useElementHeight(tabsRef);
 
   const selectedSampleSummary = useSelectedSampleSummary();
 
@@ -196,11 +198,6 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
     }
     /* eslint-enable react-hooks/refs */
   }, [sample?.messages, runningSampleData]);
-
-  const hasSampleData =
-    sample !== undefined ||
-    sampleEvents !== undefined ||
-    sampleMessages !== undefined;
 
   // Get all URL parameters at component level
   const {
@@ -372,10 +369,154 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
   const api = useApi();
   const downloadFiles = useStore((state) => state.capabilities.downloadFiles);
 
-  const tools = [];
   const [icon, setIcon] = useState(ApplicationIcons.copy);
 
+  // Right-docked sidebar — search and scans share a single slot (one at a
+  // time), each toggled from the toolbar. Scope follows the active tab. The
+  // choice is persisted per log so a closed dock stays closed across reloads.
+  const setPropertyValue = useStore(
+    (state) => state.appActions.setPropertyValue
+  );
+  const dockKey = urlLogPath || "na";
+  const storedDock = useStore((state) => {
+    const value = state.app.propertyBags["rail-dock"]?.[dockKey];
+    return value === "none" || value === "search" || value === "scans"
+      ? value
+      : undefined;
+  });
+  const rightDock = storedDock ?? "none";
+  const setRightDock = useCallback(
+    (value: "none" | "search" | "scans") =>
+      setPropertyValue("rail-dock", dockKey, value),
+    [setPropertyValue, dockKey]
+  );
+  const searchScope: SearchScope | undefined =
+    effectiveSelectedTab === kSampleTranscriptTabId
+      ? "events"
+      : effectiveSelectedTab === kSampleMessagesTabId
+        ? "messages"
+        : undefined;
+  const searchContext = useInspectSearchContext(sample);
+  const canSearch = searchContext !== null && searchScope !== undefined;
+  const closeDock = useCallback(() => setRightDock("none"), [setRightDock]);
+  // Rail entries toggle their panel: re-selecting the active one closes it,
+  // selecting another switches directly (panels are mutually exclusive).
+  const onRailSelect = useCallback(
+    (id: ActivityRailItemId) => setRightDock(rightDock === id ? "none" : id),
+    [rightDock, setRightDock]
+  );
+  const railPanelScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Panel width is a global preference persisted across samples and reloads,
+  // shared by the Transcript and Messages tabs.
+  const railPanelWidth = useStore((state) => {
+    const value = state.app.propertyBags["sidebar-widths"]?.["rail-panel"];
+    return typeof value === "number" ? value : undefined;
+  });
+  const setRailPanelWidth = useCallback(
+    (value: number) => setPropertyValue("sidebar-widths", "rail-panel", value),
+    [setPropertyValue]
+  );
+
+  // Scanner scores power the docked Scans panel (and the transcript cite
+  // labels). `open` gates the label computation to when the panel is showing.
+  const scans = useSampleScans({
+    allScores: sample?.scores ?? null,
+    sampleId: sample?.id ?? undefined,
+    sampleEpoch: sample?.epoch ?? undefined,
+    open: rightDock === "scans",
+  });
+
+  // Search cites label the transcript the same way scanner cites do; the
+  // hook follows the active tab's scope and yields nothing until a search
+  // runs. Rail panels are mutually exclusive, so in practice only one of
+  // scan/search labels is present at a time, but the merge is defensive.
+  const searchReferenceLabels = useInspectSearchReferenceLabels({
+    scope: searchScope ?? "events",
+    context: searchContext,
+  });
+  const transcriptSearchLabels =
+    searchScope === "events" ? searchReferenceLabels : undefined;
+  const messagesSearchLabels =
+    searchScope === "messages" ? searchReferenceLabels : undefined;
+  const transcriptEventNodeContext = useMemo(
+    () =>
+      mergeTranscriptLabelContext(
+        scans.eventNodeContext,
+        transcriptSearchLabels
+      ),
+    [scans.eventNodeContext, transcriptSearchLabels]
+  );
+
+  // Open the Scans panel by default the first time a sample with scans loads
+  // *for a given log*, unless that log already has a persisted dock choice
+  // (including "none" — a user who closed the dock shouldn't have it forced
+  // back open). Keyed by dockKey because SampleDisplay stays mounted while the
+  // cross-log Samples browser navigates between logs.
+  const scansDefaultedForKeyRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (scans.hasScans && scansDefaultedForKeyRef.current !== dockKey) {
+      scansDefaultedForKeyRef.current = dockKey;
+      if (storedDock === undefined) {
+        setRightDock("scans");
+      }
+    }
+  }, [scans.hasScans, storedDock, setRightDock, dockKey]);
+
+  // Build the toolbar in left-to-right groups separated by thin dividers:
+  //   [tab-specific view controls] | [shared sample actions] | [Search]
+  const tools: ReactNode[] = [];
+
+  if (effectiveSelectedTab === kSampleTranscriptTabId) {
+    const label = isNoneFilter
+      ? "None"
+      : isDebugFilter
+        ? "Debug"
+        : isDefaultFilter
+          ? "Default"
+          : "Custom";
+
+    tools.push(
+      <ToolButton
+        key="sample-filter-transcript"
+        label={`Events: ${label}`}
+        icon={ApplicationIcons.filter}
+        onClick={toggleFilter}
+        ref={setFilterButtonEl}
+        subtle
+      />,
+      <ToolButton
+        key="sample-collapse-transcript"
+        label={isCollapsed(collapsedMode) ? "Expand" : "Collapse"}
+        icon={
+          isCollapsed(collapsedMode)
+            ? ApplicationIcons.expand.all
+            : ApplicationIcons.collapse.all
+        }
+        onClick={toggleCollapsedMode}
+        subtle
+      />
+    );
+  }
+
   tools.push(
+    <ToolButton
+      key="options-button"
+      label={"Raw"}
+      icon={ApplicationIcons.display}
+      onClick={toggleDisplayMode}
+      ref={optionsRef}
+      latched={displayMode === "raw"}
+      subtle
+    />
+  );
+
+  tools.push(
+    <span
+      key="actions-separator"
+      className={styles.toolSeparator}
+      aria-hidden="true"
+    />,
     <ToolDropdownButton
       key="sample-copy"
       label="Copy"
@@ -451,53 +592,6 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
     );
   }
 
-  if (effectiveSelectedTab === kSampleTranscriptTabId) {
-    const label = isNoneFilter
-      ? "None"
-      : isDebugFilter
-        ? "Debug"
-        : isDefaultFilter
-          ? "Default"
-          : "Custom";
-
-    tools.push(
-      <ToolButton
-        key="sample-filter-transcript"
-        label={`Events: ${label}`}
-        icon={ApplicationIcons.filter}
-        onClick={toggleFilter}
-        ref={setFilterButtonEl}
-        subtle
-      />
-    );
-
-    tools.push(
-      <ToolButton
-        key="sample-collapse-transcript"
-        label={isCollapsed(collapsedMode) ? "Expand" : "Collapse"}
-        icon={
-          isCollapsed(collapsedMode)
-            ? ApplicationIcons.expand.all
-            : ApplicationIcons.collapse.all
-        }
-        onClick={toggleCollapsedMode}
-        subtle
-      />
-    );
-  }
-
-  tools.push(
-    <ToolButton
-      key="options-button"
-      label={"Raw"}
-      icon={ApplicationIcons.display}
-      onClick={toggleDisplayMode}
-      ref={optionsRef}
-      latched={displayMode === "raw"}
-      subtle
-    />
-  );
-
   if (!isVscode() && printLogPath && printSampleId && printEpoch) {
     tools.push(
       <ToolButton
@@ -509,6 +603,9 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
       />
     );
   }
+
+  // Search and Scans are no longer toolbar buttons — the always-visible
+  // activity rail (rendered below the timeline) is the sole entry point.
 
   // Is the sample running?
   const running = useMemo(() => {
@@ -545,35 +642,114 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
   }, []);
   const headerCollapsed = isHeaderSticky && headroomHidden;
 
-  // Track the header's current height (it changes between full / compact)
-  // and publish it as `--inspect-sample-header-height` on the tabs
-  // container so the sticky tab controls pin just beneath whatever
-  // height the header currently is. The tabs slide up automatically
-  // when the header collapses and back down when it expands. The same
-  // height feeds the inner StickyScroll offsets (timeline, scoring
-  // stickies) below.
   const headerWrapperRef = useRef<HTMLDivElement | null>(null);
-  const tabsContainerRef = useRef<HTMLDivElement | null>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
-  useEffect(() => {
-    const wrapper = headerWrapperRef.current;
-    const container = tabsContainerRef.current;
-    if (!wrapper || !container) return;
-    const apply = () => {
-      const h = wrapper.getBoundingClientRect().height;
-      setHeaderHeight(h);
-      container.style.setProperty("--inspect-sample-header-height", `${h}px`);
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(wrapper);
-    return () => ro.disconnect();
-  }, [selectedSampleSummary]);
+  const headerHeight = useElementHeight(
+    headerWrapperRef,
+    !!selectedSampleSummary
+  );
 
-  // Effective offset for sticky elements inside the tabs (e.g. the
-  // transcript timeline). They sit beneath both the (dynamic-height)
-  // header and the tab controls.
-  const stickyOffsetTop = tabsHeight + headerHeight;
+  // useElementHeight stops measuring while disabled, so zero out the stale
+  // last-measured height here when there's no summary mounted.
+  const effectiveHeaderHeight = selectedSampleSummary ? headerHeight : 0;
+  const stickyOffsetTop = tabsHeight + effectiveHeaderHeight;
+
+  const tabsContainerStyle = useMemo(
+    () =>
+      ({
+        "--inspect-sample-header-height": `${effectiveHeaderHeight}px`,
+      }) as CSSProperties,
+    [effectiveHeaderHeight]
+  );
+
+  // Which rail entry (if any) is showing its panel. Scans only applies on the
+  // Transcript tab and only when the sample actually has scans.
+  const activeRailId: ActivityRailItemId | null =
+    rightDock === "scans" && scans.hasScans
+      ? "scans"
+      : rightDock === "search" && searchContext
+        ? "search"
+        : null;
+
+  // Shared rail entries for both the Transcript and Messages tabs: Search on
+  // top, Scans below (per design). Scans is omitted entirely when the sample
+  // has none.
+  const railItems = useMemo<ActivityRailItem[]>(() => {
+    const items: ActivityRailItem[] = [];
+    if (canSearch) {
+      items.push({
+        id: "search",
+        label: "Search",
+        icon: ApplicationIcons.search,
+      });
+    }
+    if (scans.hasScans) {
+      items.push({
+        id: "scans",
+        label: "Scans",
+        icon: ApplicationIcons.scoringSidebar,
+      });
+    }
+    return items;
+  }, [canSearch, scans.hasScans]);
+
+  // When there are no rail entries (no search capability and no scans), the
+  // rail host is omitted entirely so the right gutter doesn't render blank.
+  const hasRail = railItems.length > 0;
+
+  // Rail + panel nodes shared verbatim by the Transcript and Messages tabs;
+  // the search scope follows the active tab.
+  const railNode = useMemo(
+    () => (
+      <ActivityRail
+        items={railItems}
+        active={activeRailId}
+        onSelect={onRailSelect}
+      />
+    ),
+    [railItems, activeRailId, onRailSelect]
+  );
+  const railPanel = useMemo(
+    () =>
+      activeRailId === "scans" ? (
+        <ScansSidebarPanel
+          scores={scans.scores}
+          events={sampleEvents}
+          makeCiteUrl={scans.makeCiteUrl}
+          selected={scans.selected}
+          onSelectedChange={scans.setSelected}
+          onClose={closeDock}
+        />
+      ) : activeRailId === "search" && searchContext && searchScope ? (
+        <SearchPanelSlot
+          scope={searchScope}
+          context={searchContext}
+          onClose={closeDock}
+        />
+      ) : null,
+    [
+      activeRailId,
+      scans.scores,
+      scans.makeCiteUrl,
+      scans.selected,
+      scans.setSelected,
+      sampleEvents,
+      searchContext,
+      searchScope,
+      closeDock,
+    ]
+  );
+  const railLabel = activeRailId === "scans" ? "Scans" : "Search";
+
+  const transcriptRail = useMemo<TranscriptLayoutRightRailProps>(
+    () => ({
+      rail: railNode,
+      panel: railPanel,
+      label: railLabel,
+      panelWidth: railPanelWidth,
+      onPanelWidthChange: setRailPanelWidth,
+    }),
+    [railNode, railPanel, railLabel, railPanelWidth, setRailPanelWidth]
+  );
 
   return (
     <DisplayModeContext.Provider value={displayModeContext}>
@@ -596,78 +772,88 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
         ) : undefined}
         <ActivityBar animating={showActivity} progress={progress} />
 
-        {hasSampleData && (
-          <div ref={tabsContainerRef}>
-            <TabSet
-              id={tabsetId}
-              tabsRef={tabsRef}
-              className={clsx(styles.tabControls)}
-              tabControlsClassName={clsx("text-size-base")}
-              tools={tools}
-              type="pills-small"
+        <div style={tabsContainerStyle}>
+          <TabSet
+            id={tabsetId}
+            tabsRef={tabsRef}
+            className={clsx(styles.tabControls)}
+            tabControlsClassName={clsx("text-size-base")}
+            tools={tools}
+            type="pills-small"
+          >
+            <TabPanel
+              key={kSampleTranscriptTabId}
+              id={kSampleTranscriptTabId}
+              className={clsx(
+                "sample-tab",
+                styles.transcriptContainer,
+                styles.overflowVisible
+              )}
+              title="Transcript"
+              onSelected={onSelectedTab}
+              selected={
+                effectiveSelectedTab === kSampleTranscriptTabId ||
+                effectiveSelectedTab === undefined
+              }
+              scrollable={false}
             >
-              <TabPanel
-                key={kSampleTranscriptTabId}
-                id={kSampleTranscriptTabId}
-                className={clsx(
-                  "sample-tab",
-                  styles.transcriptContainer,
-                  styles.overflowVisible
-                )}
-                title="Transcript"
-                onSelected={onSelectedTab}
-                selected={
-                  effectiveSelectedTab === kSampleTranscriptTabId ||
-                  effectiveSelectedTab === undefined
-                }
-                scrollable={false}
-              >
-                <TranscriptFilterPopover
-                  showing={isShowing}
-                  setShowing={setShowing}
-                  positionEl={filterButtonEl}
-                />
+              <TranscriptFilterPopover
+                showing={isShowing}
+                setShowing={setShowing}
+                positionEl={filterButtonEl}
+              />
 
-                {!sampleEvents || sampleEvents.length === 0 ? (
-                  sampleData.status === "loading" ? null : (
-                    <NoContentsPanel
-                      text={
-                        eventsCleared
-                          ? "Transcript events were removed because this sample exceeds the browser's size limit. Use the Messages tab to view the conversation."
-                          : "No events to display."
-                      }
-                    />
-                  )
-                ) : (
+              {!sampleEvents || sampleEvents.length === 0 ? (
+                sampleData.status === "loading" ? null : (
+                  <NoContentsPanel
+                    text={
+                      eventsCleared
+                        ? "Transcript events were removed because this sample exceeds the browser's size limit. Use the Messages tab to view the conversation."
+                        : "No events to display."
+                    }
+                  />
+                )
+              ) : (
+                <div className={styles.tabContent}>
                   <TranscriptPanel
                     id={`${baseId}-transcript-display-${id}`}
                     key={`${baseId}-transcript-display-${id}`}
                     scrollRef={scrollRef}
                     offsetTop={stickyOffsetTop}
-                    sampleId={sample?.id ?? undefined}
-                    sampleEpoch={sample?.epoch ?? undefined}
                     running={running}
                     events={sampleEvents}
                     timelines={sample?.timelines ?? undefined}
-                    scans={sample?.scores ?? undefined}
+                    eventNodeContext={transcriptEventNodeContext}
                     initialEventId={sampleDetailNavigation.event}
                     initialMessageId={sampleDetailNavigation.message}
+                    rightRail={hasRail ? transcriptRail : undefined}
+                    rightRailPanelScrollRef={railPanelScrollRef}
                   />
-                )}
-              </TabPanel>
-              <TabPanel
-                key={kSampleMessagesTabId}
-                id={kSampleMessagesTabId}
-                className={clsx(
-                  "sample-tab",
-                  styles.fullWidth,
-                  styles.chat,
-                  styles.overflowVisible
-                )}
-                title="Messages"
-                onSelected={onSelectedTab}
-                selected={effectiveSelectedTab === kSampleMessagesTabId}
-                scrollable={false}
+                </div>
+              )}
+            </TabPanel>
+            <TabPanel
+              key={kSampleMessagesTabId}
+              id={kSampleMessagesTabId}
+              className={clsx(
+                "sample-tab",
+                styles.fullWidth,
+                styles.overflowVisible
+              )}
+              title="Messages"
+              onSelected={onSelectedTab}
+              selected={effectiveSelectedTab === kSampleMessagesTabId}
+              scrollable={false}
+            >
+              <RailSidebarHost
+                contentClassName={styles.chat}
+                scrollRef={scrollRef}
+                panelTop={stickyOffsetTop}
+                panelWidth={railPanelWidth}
+                onPanelWidthChange={setRailPanelWidth}
+                rail={hasRail ? railNode : undefined}
+                panel={hasRail ? railPanel : undefined}
+                label={railLabel}
               >
                 <ChatViewVirtualList
                   key={`${baseId}-chat-${id}`}
@@ -676,6 +862,7 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                   initialMessageId={sampleDetailNavigation.message}
                   offsetTop={stickyOffsetTop}
                   display={chatDisplay}
+                  labels={messagesSearchLabels}
                   linking={chatLinking}
                   onNativeFindChanged={setNativeFind}
                   scrollRef={scrollRef}
@@ -683,133 +870,183 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
                   running={running}
                   className={styles.fullWidth}
                 />
-              </TabPanel>
+              </RailSidebarHost>
+            </TabPanel>
+            <TabPanel
+              key={kSampleScoringTabId}
+              id={kSampleScoringTabId}
+              className="sample-tab"
+              title="Scoring"
+              onSelected={onSelectedTab}
+              selected={effectiveSelectedTab === kSampleScoringTabId}
+            >
+              <SampleScoresView
+                sample={sample}
+                className={styles.padded}
+                scrollRef={scrollRef}
+              />
+            </TabPanel>
+            {sampleUsages.length > 0 ? (
               <TabPanel
-                key={kSampleScoringTabId}
-                id={kSampleScoringTabId}
-                className="sample-tab"
-                title="Scoring"
-                onSelected={onSelectedTab}
-                selected={effectiveSelectedTab === kSampleScoringTabId}
-              >
-                <SampleScoresView
-                  sample={sample}
-                  className={styles.padded}
-                  scrollRef={scrollRef}
-                />
-              </TabPanel>
-              {sampleUsages.length > 0 ? (
-                <TabPanel
-                  id={kSampleUsageTabId}
-                  className={clsx("sample-tab")}
-                  title="Usage"
-                  onSelected={onSelectedTab}
-                  selected={effectiveSelectedTab === kSampleUsageTabId}
-                >
-                  <div
-                    className={clsx(
-                      styles.padded,
-                      styles.fullWidth,
-                      styles.metadataPanel
-                    )}
-                  >
-                    {sampleUsages}
-                  </div>
-                </TabPanel>
-              ) : null}
-              <TabPanel
-                id={kSampleMetdataTabId}
+                id={kSampleUsageTabId}
                 className={clsx("sample-tab")}
-                title="Metadata"
+                title="Usage"
                 onSelected={onSelectedTab}
-                selected={effectiveSelectedTab === kSampleMetdataTabId}
+                selected={effectiveSelectedTab === kSampleUsageTabId}
               >
-                {sampleMetadatas.length > 0 ? (
-                  <div
-                    className={clsx(
-                      styles.padded,
-                      styles.fullWidth,
-                      styles.metadataPanel
-                    )}
-                  >
-                    {sampleMetadatas}
-                  </div>
-                ) : (
-                  <NoContentsPanel text="No sample metadata available" />
-                )}
-              </TabPanel>
-              {sample?.error && (
-                <TabPanel
-                  id={kSampleErrorTabId}
-                  className="sample-tab"
-                  title="Error"
-                  onSelected={onSelectedTab}
-                  selected={effectiveSelectedTab === kSampleErrorTabId}
+                <div
+                  className={clsx(
+                    styles.padded,
+                    styles.fullWidth,
+                    styles.metadataPanel
+                  )}
                 >
-                  <div className={clsx(styles.error)}>
-                    {sample?.error ? (
-                      <Card key={`sample-error}`}>
-                        <CardHeader label={`Sample Error`} />
-                        <CardBody>
-                          <ANSIDisplay
-                            output={sample.error.traceback_ansi}
-                            className={clsx("text-size-small", styles.ansi)}
-                            style={{
-                              fontSize: "clamp(0.3rem, 1.1vw, 0.8rem)",
-                              margin: "0.5em 0",
-                            }}
-                          />
-                        </CardBody>
-                      </Card>
-                    ) : undefined}
-                  </div>
-                </TabPanel>
+                  {sampleUsages}
+                </div>
+              </TabPanel>
+            ) : null}
+            <TabPanel
+              id={kSampleMetdataTabId}
+              className={clsx("sample-tab")}
+              title="Metadata"
+              onSelected={onSelectedTab}
+              selected={effectiveSelectedTab === kSampleMetdataTabId}
+            >
+              {sampleMetadatas.length > 0 ? (
+                <div
+                  className={clsx(
+                    styles.padded,
+                    styles.fullWidth,
+                    styles.metadataPanel
+                  )}
+                >
+                  {sampleMetadatas}
+                </div>
+              ) : (
+                <NoContentsPanel text="No sample metadata available" />
               )}
-
-              {sample?.error_retries && sample.error_retries.length > 0 ? (
-                <TabPanel
-                  id={kSampleRetriesTabId}
-                  className="sample-tab"
-                  title="Retries"
-                  onSelected={onSelectedTab}
-                  selected={effectiveSelectedTab === kSampleRetriesTabId}
-                >
-                  <div className={styles.retriedErrors}>
-                    <SampleRetriedErrors
-                      key={sample.uuid || String(sample.id)}
-                      id={sample.uuid || String(sample.id)}
-                      retries={sample.error_retries}
-                      scrollRef={scrollRef}
-                    />
-                  </div>
-                </TabPanel>
-              ) : null}
-
+            </TabPanel>
+            {sample?.error && (
               <TabPanel
-                id={kSampleJsonTabId}
-                className={"sample-tab"}
-                title="JSON"
+                id={kSampleErrorTabId}
+                className="sample-tab"
+                title="Error"
                 onSelected={onSelectedTab}
-                selected={effectiveSelectedTab === kSampleJsonTabId}
+                selected={effectiveSelectedTab === kSampleErrorTabId}
               >
-                {!sample ? (
-                  <NoContentsPanel text="JSON not available" />
-                ) : (
-                  <div className={clsx(styles.padded, styles.fullWidth)}>
-                    <SampleJSONView
-                      sample={sample}
-                      className={clsx("text-size-small")}
-                    />
-                  </div>
-                )}
+                <div className={clsx(styles.error)}>
+                  {sample?.error ? (
+                    <Card key={`sample-error}`}>
+                      <CardHeader label={`Sample Error`} />
+                      <CardBody>
+                        <ANSIDisplay
+                          output={sample.error.traceback_ansi}
+                          className={clsx("text-size-small", styles.ansi)}
+                          style={{
+                            fontSize: "clamp(0.3rem, 1.1vw, 0.8rem)",
+                            margin: "0.5em 0",
+                          }}
+                        />
+                      </CardBody>
+                    </Card>
+                  ) : undefined}
+                </div>
               </TabPanel>
-            </TabSet>
-          </div>
-        )}
+            )}
+
+            {sample?.error_retries && sample.error_retries.length > 0 ? (
+              <TabPanel
+                id={kSampleRetriesTabId}
+                className="sample-tab"
+                title="Retries"
+                onSelected={onSelectedTab}
+                selected={effectiveSelectedTab === kSampleRetriesTabId}
+              >
+                <div className={styles.retriedErrors}>
+                  <SampleRetriedErrors
+                    key={sample.uuid || String(sample.id)}
+                    id={sample.uuid || String(sample.id)}
+                    retries={sample.error_retries}
+                    scrollRef={scrollRef}
+                  />
+                </div>
+              </TabPanel>
+            ) : null}
+
+            <TabPanel
+              id={kSampleJsonTabId}
+              className={"sample-tab"}
+              title="JSON"
+              onSelected={onSelectedTab}
+              selected={effectiveSelectedTab === kSampleJsonTabId}
+            >
+              {!sample ? (
+                <NoContentsPanel text="JSON not available" />
+              ) : (
+                <div className={clsx(styles.padded, styles.fullWidth)}>
+                  <SampleJSONView
+                    sample={sample}
+                    className={clsx("text-size-small")}
+                  />
+                </div>
+              )}
+            </TabPanel>
+          </TabSet>
+        </div>
       </Fragment>
     </DisplayModeContext.Provider>
   );
 };
+
+interface RailSidebarHostProps {
+  /** The always-visible activity rail. Omit to render content with no rail. */
+  rail?: ReactNode;
+  /** The open panel, or null when no panel is active. */
+  panel?: ReactNode;
+  /** The outer scroll container the panel sticks within. */
+  scrollRef: RefObject<HTMLDivElement | null>;
+  panelTop: number;
+  /** Controlled panel width, kept in sync with the Transcript tab's panel. */
+  panelWidth?: number;
+  onPanelWidthChange?: (width: number) => void;
+  /** aria-label root for the panel region. */
+  label?: string;
+  /** Extra className applied to the main content slot. */
+  contentClassName?: string;
+  children: ReactNode;
+}
+
+/**
+ * Flex host for tabs without a swimlane timeline (Messages): main content,
+ * then the shared <RailDock> (optional resizable panel + always-visible rail)
+ * pinned right. Mirrors the transcript tab's rail layout.
+ */
+const RailSidebarHost: FC<RailSidebarHostProps> = ({
+  rail,
+  panel,
+  scrollRef,
+  panelTop,
+  panelWidth,
+  onPanelWidthChange,
+  label,
+  contentClassName,
+  children,
+}) => (
+  <div className={styles.railHost}>
+    <div className={clsx(styles.tabContent, contentClassName)}>{children}</div>
+    {rail != null && (
+      <RailDock
+        rail={rail}
+        panel={panel}
+        scrollRef={scrollRef}
+        offsetTop={panelTop}
+        panelWidth={panelWidth}
+        onPanelWidthChange={onPanelWidthChange}
+        label={label}
+      />
+    )}
+  </div>
+);
 
 interface SampleUsagePanelProps {
   id: string;

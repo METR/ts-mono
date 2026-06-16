@@ -9,17 +9,17 @@ import { create } from "zustand";
 import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 
+import {
+  createInitialSearchPanelState,
+  normalizeSearchPanelState,
+  type SearchPanelState,
+} from "@tsmono/inspect-components/transcript-search";
 import type { VirtualListStateSnapshot } from "@tsmono/react/virtual";
 import { debounce } from "@tsmono/util";
 
 import { ScoutApiV2 } from "../api/api";
 import { ColumnSizingStrategyKey } from "../app/components/columnSizing";
 import type { ScanColumnKey } from "../app/scans/columns";
-import {
-  createInitialSearchPanelState,
-  normalizeSearchPanelState,
-  SearchPanelState,
-} from "../app/transcript/searchPanelState";
 import {
   ErrorScope,
   ResultGroup,
@@ -129,7 +129,7 @@ interface StoreState {
   // Transcript
   transcriptCollapsedEvents: Record<string, Record<string, boolean>>;
   transcriptOutlineId?: string;
-  searchPanelStates: Record<string, SearchPanelState>;
+  searchPanelStates: Record<string, SearchPanelState | undefined>;
 
   // Transcript Detail properties (clear when switching transcripts)
   selectedTranscriptTab?: string;

@@ -20,6 +20,7 @@ import {
   DisplayModeContext,
   MetaDataGrid,
 } from "@tsmono/inspect-components/content";
+import type { SearchScope as TranscriptSearchScope } from "@tsmono/inspect-components/transcript-search";
 import {
   TabPanel,
   TabSet,
@@ -45,7 +46,6 @@ import { useSearchReferenceLabels } from "./hooks/useSearchReferenceLabels";
 import { useTranscriptColumnFilter } from "./hooks/useTranscriptColumnFilter";
 import { useTranscriptNavigation } from "./hooks/useTranscriptNavigation";
 import { SearchPanel } from "./SearchPanel";
-import type { TranscriptSearchScope } from "./searchRequest";
 import styles from "./TranscriptBody.module.css";
 import { TranscriptFilterPopover } from "./TranscriptFilterPopover";
 
@@ -125,11 +125,18 @@ export const TranscriptBody: FC<TranscriptBodyProps> = ({
         ? "events"
         : undefined;
 
-  const eventsReferenceLabels = useSearchReferenceLabels({
-    scope: "events",
+  // Labels track the active tab's search scope so each tab shows the cites
+  // from its own results. `?? "events"` only feeds the hook a stable scope
+  // when no tab is searchable; searchId resolution still yields no labels.
+  const referenceLabels = useSearchReferenceLabels({
+    scope: searchScope ?? "events",
     transcriptDir: resolvedTranscriptsDir,
     transcriptId: transcript.transcript_id,
   });
+  const eventsReferenceLabels =
+    searchScope === "events" ? referenceLabels : undefined;
+  const messagesReferenceLabels =
+    searchScope === "messages" ? referenceLabels : undefined;
   const searchAvailable = searchScope !== undefined;
 
   const handleTabChange = useCallback(
@@ -411,6 +418,7 @@ export const TranscriptBody: FC<TranscriptBodyProps> = ({
             display={{
               formatDateTime,
             }}
+            labels={messagesReferenceLabels}
             linking={{
               enabled: isHostedEnvironment(),
               getMessageUrl: getFullMessageUrl,
