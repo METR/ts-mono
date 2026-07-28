@@ -153,13 +153,24 @@ export function useTranscriptSearchSource(
       if (range.toString().toLowerCase() !== term.toLowerCase()) return;
       const matches = getMatches(term);
       const match = matchAtSelection(matches, term);
-      // A find-shaped selection that maps to no match means the user has moved
-      // somewhere we cannot index. Forget the remembered position rather than
-      // let the next cross-row jump resume from it — a stale ref is what made
-      // Next teleport back to the top of the transcript. A cleared selection
-      // (rangeCount 0, e.g. findExtendedInDOM's deliberate removeAllRanges
-      // before calling us) returns above and leaves the ref intact.
-      lastResolvedRef.current = match ? { match, term } : null;
+      if (match) {
+        lastResolvedRef.current = { match, term };
+      } else if (!selectionInEvent(lastResolvedRef.current?.match.eventId)) {
+        // The selection has genuinely left the remembered event — forget the
+        // position rather than let the next cross-row jump resume from it (a
+        // stale ref is what made Next teleport back to the top of the
+        // transcript). But `matchAtSelection` can also come up empty while
+        // the selection is still sitting on the remembered event: some
+        // panels render more DOM occurrences of the term than
+        // `extractEventFields` counted as matches (e.g. an assistant `input`
+        // message the panel shows but the field extractor skips), so the
+        // occurrence-index walk can overshoot. That's not the user moving
+        // away, so `selectionInEvent` above keeps the ref intact for it. A
+        // cleared selection (rangeCount 0, e.g. findExtendedInDOM's
+        // deliberate removeAllRanges before calling us) early-returns above
+        // and leaves the ref intact either way.
+        lastResolvedRef.current = null;
+      }
     };
     document.addEventListener("selectionchange", onSelectionChange);
     return () =>
@@ -435,6 +446,42 @@ function viewportPosition(
 }
 
 /**
+ * Walk up from `node` to the nearest ancestor element whose `id` satisfies
+ * `isMatch`, treating `node` itself as the starting point if it's already an
+ * element. Returns `null` if no such ancestor exists.
+ */
+function closestEventAncestor(
+  node: Node,
+  isMatch: (id: string) => boolean
+): Element | null {
+  let el: Element | null =
+    node.nodeType === Node.ELEMENT_NODE
+      ? (node as Element)
+      : node.parentElement;
+  while (el && !isMatch(el.id)) el = el.parentElement;
+  return el;
+}
+
+/**
+ * True if the current document selection sits inside the event panel with id
+ * `eventId`. Used by the selectionchange listener to distinguish "the user
+ * is still on the remembered match, but our occurrence index came up short"
+ * from "the user has moved somewhere else" — only the latter should forget
+ * `lastResolvedRef`. Returns `false` when `eventId` is `undefined` (nothing
+ * remembered, so nothing to protect) or when there is no live selection.
+ */
+function selectionInEvent(eventId: string | undefined): boolean {
+  if (!eventId || typeof window === "undefined") return false;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  return (
+    closestEventAncestor(range.startContainer, (id) => id === eventId) !==
+    null
+  );
+}
+
+/**
  * Find the SampleMatch corresponding to the current document selection, if any.
  *
  * Walks up from the selection's startContainer to find an event-panel element
@@ -457,11 +504,9 @@ function matchAtSelection(
   const range = sel.getRangeAt(0);
 
   const eventIds = new Set(matches.map((m) => m.eventId));
-  let el: Element | null =
-    range.startContainer.nodeType === Node.ELEMENT_NODE
-      ? (range.startContainer as Element)
-      : range.startContainer.parentElement;
-  while (el && !eventIds.has(el.id)) el = el.parentElement;
+  const el = closestEventAncestor(range.startContainer, (id) =>
+    eventIds.has(id)
+  );
   if (!el) return null;
   const eventId = el.id;
 

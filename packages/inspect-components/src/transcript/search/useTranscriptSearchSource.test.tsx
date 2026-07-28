@@ -385,6 +385,31 @@ describe("useTranscriptSearchSource", () => {
     expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e3");
   });
 
+  // Pins the boundary case the other anchor tests don't reach: the viewport's
+  // leading match is matches[0] itself, so the "index just before the
+  // viewport" arithmetic bottoms out at -1 — pickNext's own sentinel for
+  // "nothing resolved". A clamp that pushes that -1 up to 0 (an earlier,
+  // reverted attempt at a fix) would land one match late, on e2.
+  it("lands on the first match when the viewport is at the top", async () => {
+    const { events, rows } = fiveEventFixture();
+    const scrollToEvent = vi.fn();
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3", "e4", "e5"],
+      visibleRange: { startIndex: 0, endIndex: 0 }, // e1 on screen
+      panels: allPanels,
+      scrollToEvent,
+    });
+
+    await act(async () => {
+      await h.search("wondering", "forward");
+    });
+
+    expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e1");
+  });
+
   it("anchors a backward search on the viewport instead of jumping to the end", async () => {
     const { events, rows } = fiveEventFixture();
     const scrollToEvent = vi.fn();
@@ -473,5 +498,63 @@ describe("useTranscriptSearchSource", () => {
     // Falls back to the viewport (e2), not to the abandoned e4 → e5.
     expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e2");
     stray.remove();
+  });
+
+  // extractEventFields (which findAllMatches counts occurrences from) skips
+  // some content a panel actually renders — e.g. assistant `input` messages
+  // the model event view still shows. So a panel can hold more DOM
+  // occurrences of the term than the event has matches for, and selecting
+  // one of those extra occurrences makes matchAtSelection's occurrence-index
+  // walk run past the known matches and return null, even though the
+  // selection never left the remembered event. Without the fix, that null
+  // wipes lastResolvedRef and the next press falls back to the viewport
+  // (e1), stalling on the same match instead of advancing.
+  it("keeps a remembered position when the selection stays on that event but the index overshoots", async () => {
+    const { events, rows } = fiveEventFixture();
+    const scrollToEvent = vi.fn();
+    // e4's panel renders a second "wondering" beyond the one match
+    // findAllMatches counted for e4 — the overshoot case.
+    const panels = allPanels.map((p) =>
+      p.id === "e4" ? { id: p.id, text: "wondering wondering" } : p
+    );
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3", "e4", "e5"],
+      visibleRange: { startIndex: 0, endIndex: 0 }, // e1 on screen
+      panels,
+      scrollToEvent,
+    });
+    h.countAll("wondering");
+    // Remember e4 via its one real match...
+    selectTermIn("e4", "wondering");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    // ...then select the second, unindexed "wondering" in the SAME panel:
+    // matchAtSelection overshoots and returns null, but the selection is
+    // still inside e4.
+    const panel = document.getElementById("e4")!;
+    const textNode = panel.firstChild as Text;
+    const secondIdx = textNode.data.toLowerCase().lastIndexOf("wondering");
+    const range = document.createRange();
+    range.setStart(textNode, secondIdx);
+    range.setEnd(textNode, secondIdx + "wondering".length);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      await h.search("wondering", "forward");
+    });
+
+    // Resumes from the remembered e4 and advances to e5. If the overshoot
+    // had wiped the ref, this would fall back to the viewport and land on
+    // e1 instead.
+    expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e5");
   });
 });
