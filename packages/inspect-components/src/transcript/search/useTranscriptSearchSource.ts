@@ -476,8 +476,7 @@ function selectionInEvent(eventId: string | undefined): boolean {
   if (!sel || sel.rangeCount === 0) return false;
   const range = sel.getRangeAt(0);
   return (
-    closestEventAncestor(range.startContainer, (id) => id === eventId) !==
-    null
+    closestEventAncestor(range.startContainer, (id) => id === eventId) !== null
   );
 }
 

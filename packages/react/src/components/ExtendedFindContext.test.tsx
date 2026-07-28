@@ -36,9 +36,7 @@ const Source: FC<SourceSpec> = ({ id, count, locator }) => {
  * `ordinalAtSelection` walks counters in registration order, so the array
  * order is what the offset arithmetic is defined against.
  */
-function renderSources(
-  sources: SourceSpec[]
-): (term: string) => number | null {
+function renderSources(sources: SourceSpec[]): (term: string) => number | null {
   let ordinalAtSelection: ((term: string) => number | null) | null = null;
   const Probe: FC = () => {
     const { ordinalAtSelection: fn } = useExtendedFind();
