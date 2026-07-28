@@ -24,6 +24,13 @@ export type ExtendedFindFn = (
 // Count total matches across all data items
 export type ExtendedCountFn = (term: string) => number;
 
+/**
+ * Locates the current document selection within one source's match list.
+ * Returns the 0-based index of the match the selection sits on, or null when
+ * the selection is not on one of this source's matches.
+ */
+export type MatchLocatorFn = (term: string) => number | null;
+
 // The context provides an extended search function and a way for the active
 // virtual lists to register themselves.
 interface ExtendedFindContextType {
@@ -34,6 +41,18 @@ interface ExtendedFindContextType {
   registerVirtualList: (id: string, searchFn: ExtendedFindFn) => () => void;
   countAllMatches: (term: string) => number;
   registerMatchCounter: (id: string, countFn: ExtendedCountFn) => () => void;
+  registerMatchLocator: (id: string, locatorFn: MatchLocatorFn) => () => void;
+  /**
+   * 0-based ordinal of the current selection across all registered sources,
+   * or null when no source claims it.
+   *
+   * Sources are visited in `registerMatchCounter` order and each non-claiming
+   * source contributes its match count as an offset, so the result indexes
+   * into the same total `countAllMatches` reports. A source that registers a
+   * locator but no counter is never visited — an offset is meaningless
+   * without a count.
+   */
+  ordinalAtSelection: (term: string) => number | null;
   // Bumped on every counter (un)registration. Counters re-register when
   // their underlying data changes, so this doubles as a cheap content
   // version for invalidating cached countAllMatches results.
@@ -51,6 +70,7 @@ export const ExtendedFindProvider = ({
 }: ExtendedFindProviderProps) => {
   const virtualLists = useRef<Map<string, ExtendedFindFn>>(new Map());
   const matchCounters = useRef<Map<string, ExtendedCountFn>>(new Map());
+  const matchLocators = useRef<Map<string, MatchLocatorFn>>(new Map());
   const matchCountersVersion = useRef(0);
 
   const extendedFindTerm = useCallback(
@@ -120,6 +140,26 @@ export const ExtendedFindProvider = ({
     []
   );
 
+  const registerMatchLocator = useCallback(
+    (id: string, locatorFn: MatchLocatorFn): (() => void) => {
+      matchLocators.current.set(id, locatorFn);
+      return () => {
+        matchLocators.current.delete(id);
+      };
+    },
+    []
+  );
+
+  const ordinalAtSelection = useCallback((term: string): number | null => {
+    let offset = 0;
+    for (const [id, countFn] of matchCounters.current) {
+      const idx = matchLocators.current.get(id)?.(term) ?? null;
+      if (idx !== null) return offset + idx;
+      offset += countFn(term);
+    }
+    return null;
+  }, []);
+
   const getMatchCountersVersion = useCallback(
     () => matchCountersVersion.current,
     []
@@ -130,6 +170,8 @@ export const ExtendedFindProvider = ({
     registerVirtualList,
     countAllMatches,
     registerMatchCounter,
+    registerMatchLocator,
+    ordinalAtSelection,
     getMatchCountersVersion,
   };
 
