@@ -200,8 +200,11 @@ describe("useTranscriptSearchSource", () => {
     // Tests that select text in a stray node appended directly to
     // document.body (outside the React tree, so testing-library's automatic
     // cleanup never removes it) must also clear the document selection —
-    // otherwise it would persist into later tests.
+    // otherwise it would persist into later tests. Removing the strays here
+    // (rather than at the end of each test) means a failing assertion still
+    // cleans up instead of leaking the node into later tests.
     window.getSelection()?.removeAllRanges();
+    document.querySelectorAll("[data-stray-node]").forEach((n) => n.remove());
   });
 
   it("counts matches across all rows", () => {
@@ -333,6 +336,7 @@ describe("useTranscriptSearchSource", () => {
       panels: [{ id: "e1", text: "wondering one" }],
     });
     const stray = document.createElement("div");
+    stray.setAttribute("data-stray-node", "");
     stray.textContent = "wondering elsewhere";
     document.body.appendChild(stray);
 
@@ -344,7 +348,6 @@ describe("useTranscriptSearchSource", () => {
     sel?.addRange(range);
 
     expect(h.ordinalAt("wondering")).toBeNull();
-    stray.remove();
   });
 
   // Five events, one match each. The viewport shows only e3, and nothing has
@@ -431,6 +434,36 @@ describe("useTranscriptSearchSource", () => {
     expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e3");
   });
 
+  // Pins viewportPosition's "every match sits above the viewport" branch
+  // (`first === -1 → matches.length - 1`), which is what makes pickNext wrap
+  // forward to matches[0] instead of reproducing the C3 teleport (landing
+  // past the end of the array). `e6` has no "wondering" occurrence, so it
+  // contributes an event order beyond every match's, putting the viewport
+  // past all of them.
+  it("wraps a forward search to the top when the viewport sits past every match", async () => {
+    const { events: fiveEvents } = fiveEventFixture();
+    const e6 = ev("e6", "nothing relevant here");
+    const { events, rows } = singleRowFixture([...fiveEvents, e6]);
+    const scrollToEvent = vi.fn();
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3", "e4", "e5", "e6"],
+      visibleRange: { startIndex: 5, endIndex: 5 }, // e6 on screen
+      panels: [...allPanels, { id: "e6", text: "nothing relevant here" }],
+      scrollToEvent,
+    });
+
+    await act(async () => {
+      await h.search("wondering", "forward");
+    });
+
+    // No match sits at or after e6, so viewportPosition anchors at the last
+    // match (e5) and pickNext's forward wraparound lands on the first (e1).
+    expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e1");
+  });
+
   it("resumes from the last selected match", async () => {
     const { events, rows } = fiveEventFixture();
     const scrollToEvent = vi.fn();
@@ -478,6 +511,7 @@ describe("useTranscriptSearchSource", () => {
     });
     // ...then land on text that maps to no match (the stale-ref teleport).
     const stray = document.createElement("div");
+    stray.setAttribute("data-stray-node", "");
     stray.textContent = "wondering elsewhere";
     document.body.appendChild(stray);
     const range = document.createRange();
@@ -497,7 +531,6 @@ describe("useTranscriptSearchSource", () => {
 
     // Falls back to the viewport (e2), not to the abandoned e4 → e5.
     expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e2");
-    stray.remove();
   });
 
   // extractEventFields (which findAllMatches counts occurrences from) skips

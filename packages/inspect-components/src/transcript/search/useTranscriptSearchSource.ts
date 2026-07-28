@@ -368,13 +368,15 @@ interface ResolvePositionOptions {
  * Layered, most trustworthy first:
  *  1. the last match the selection listener resolved, when the term is
  *     unchanged. That listener sees every `window.find` hit, so this is the
- *     live selection's position; it is cleared when the selection moves
- *     somewhere unindexable, so it is never a position the user has left.
+ *     live selection's position; it is cleared when the selection leaves the
+ *     remembered event (a selection on a different, unindexed occurrence
+ *     within that same event does not clear it).
  *  2. the viewport, so a press moves on from what is on screen rather than
  *     jumping to the top of the transcript.
- *  3. -1, only when no view is mounted — `pickNext` then starts from the end
- *     matching the direction, which is right for a fresh search with nothing
- *     rendered.
+ *  3. -1, when no view is mounted, or when no visible node maps to a known
+ *     event (see `viewportPosition`) — `pickNext` then falls back to
+ *     `matches[0]` (forward) or the last match (backward), matching the
+ *     direction, which is right for a fresh search with nothing resolved.
  */
 function resolvePosition(opts: ResolvePositionOptions): number {
   const { matches, term, direction, last, view, eventOrder } = opts;
