@@ -66,7 +66,8 @@ export function useTranscriptSearchSource(
     onHeadroomSetHidden,
     id = DEFAULT_ID,
   } = options;
-  const { registerVirtualList, registerMatchCounter } = useExtendedFind();
+  const { registerVirtualList, registerMatchCounter, registerMatchLocator } =
+    useExtendedFind();
   const setFindTarget = useFindTargetSetter();
 
   const eventToRow = useMemo(() => buildEventToRowMap(rows), [rows]);
@@ -154,6 +155,20 @@ export function useTranscriptSearchSource(
       // listener — earlier than searchFn, which only fires on cross-row jumps.
       activeTermRef.current = term;
       return getMatches(term).length;
+    },
+    [getMatches]
+  );
+
+  // Answers "which match is the user's selection on?" for FindBand's counter.
+  // Unlike searchFn this runs while the selection is live — FindBand calls it
+  // after window.find has landed, whereas findExtendedInDOM clears the
+  // selection before it ever reaches searchFn.
+  const locatorFn = useCallback(
+    (term: string): number | null => {
+      if (!term) return null;
+      const matches = getMatches(term);
+      const match = matchAtSelection(matches, term);
+      return match ? matches.indexOf(match) : null;
     },
     [getMatches]
   );
@@ -275,11 +290,21 @@ export function useTranscriptSearchSource(
   useEffect(() => {
     const unCount = registerMatchCounter(id, countFn);
     const unSearch = registerVirtualList(id, searchFn);
+    const unLocate = registerMatchLocator(id, locatorFn);
     return () => {
       unCount();
       unSearch();
+      unLocate();
     };
-  }, [id, registerMatchCounter, registerVirtualList, countFn, searchFn]);
+  }, [
+    id,
+    registerMatchCounter,
+    registerVirtualList,
+    registerMatchLocator,
+    countFn,
+    searchFn,
+    locatorFn,
+  ]);
 }
 
 function pickNext(

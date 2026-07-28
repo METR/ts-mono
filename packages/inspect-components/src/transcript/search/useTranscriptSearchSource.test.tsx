@@ -120,6 +120,7 @@ interface HarnessOptions {
 interface Harness {
   countAll(term: string): number;
   search(term: string, direction: FindDirection): Promise<boolean>;
+  ordinalAt(term: string): number | null;
 }
 
 /**
@@ -136,9 +137,11 @@ function renderHarness(opts: HarnessOptions): Harness {
   );
   const harness: Partial<Harness> = {};
   const Probe = () => {
-    const { extendedFindTerm, countAllMatches } = useExtendedFind();
+    const { extendedFindTerm, countAllMatches, ordinalAtSelection } =
+      useExtendedFind();
     harness.countAll = countAllMatches;
     harness.search = extendedFindTerm;
+    harness.ordinalAt = ordinalAtSelection;
     const viewNodesRef = useRef<TranscriptViewNodesHandle | null>({
       scrollToEvent: opts.scrollToEvent ?? vi.fn(),
       getFlattenedNodes: () => flattened,
@@ -165,9 +168,25 @@ function renderHarness(opts: HarnessOptions): Harness {
       </FindTargetProvider>
     </ExtendedFindProvider>
   );
-  if (!harness.countAll || !harness.search)
+  if (!harness.countAll || !harness.search || !harness.ordinalAt)
     throw new Error("harness not ready");
   return harness as Harness;
+}
+
+/** Select the first occurrence of `term` inside the panel with id `panelId`. */
+function selectTermIn(panelId: string, term: string): void {
+  const panel = document.getElementById(panelId);
+  if (!panel) throw new Error(`no panel ${panelId}`);
+  const textNode = panel.firstChild as Text | null;
+  if (!textNode) throw new Error(`panel ${panelId} has no text`);
+  const idx = textNode.data.toLowerCase().indexOf(term.toLowerCase());
+  if (idx === -1) throw new Error(`"${term}" not in panel ${panelId}`);
+  const range = document.createRange();
+  range.setStart(textNode, idx);
+  range.setEnd(textNode, idx + term.length);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
 }
 
 // =============================================================================
@@ -264,5 +283,51 @@ describe("useTranscriptSearchSource", () => {
     // is the LAST scroll target.
     const lastScroll = scrollToEvent.mock.calls.at(-1) as [string] | undefined;
     expect(lastScroll?.[0]).toBe("e3");
+  });
+
+  it("reports the ordinal of the selected match", () => {
+    const { events, rows } = singleRowFixture([
+      ev("e1", "wondering one"),
+      ev("e2", "wondering two"),
+      ev("e3", "wondering three"),
+    ]);
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3"],
+      panels: [
+        { id: "e1", text: "wondering one" },
+        { id: "e2", text: "wondering two" },
+        { id: "e3", text: "wondering three" },
+      ],
+    });
+
+    selectTermIn("e2", "wondering");
+
+    expect(h.ordinalAt("wondering")).toBe(1);
+  });
+
+  it("reports no ordinal for a selection outside any event panel", () => {
+    const { events, rows } = singleRowFixture([ev("e1", "wondering one")]);
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1"],
+      panels: [{ id: "e1", text: "wondering one" }],
+    });
+    const stray = document.createElement("div");
+    stray.textContent = "wondering elsewhere";
+    document.body.appendChild(stray);
+
+    const range = document.createRange();
+    range.setStart(stray.firstChild!, 0);
+    range.setEnd(stray.firstChild!, "wondering".length);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    expect(h.ordinalAt("wondering")).toBeNull();
   });
 });
