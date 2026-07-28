@@ -419,11 +419,7 @@ function viewportPosition(
     // Every match sits above the viewport — resume at the end so pickNext
     // wraps to the top, the only sensible forward move.
     if (first === -1) return matches.length - 1;
-    // Clamp at 0 rather than returning -1 when the viewport's leading match
-    // is also the very first match overall: -1 is pickNext's reserved
-    // "nothing resolved" sentinel (see its position < 0 branch), which would
-    // wrongly re-land on that same match instead of advancing past it.
-    return Math.max(first - 1, 0);
+    return first - 1;
   }
 
   let lastIdx = -1;

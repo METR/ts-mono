@@ -261,9 +261,13 @@ describe("useTranscriptSearchSource", () => {
   // searchFn (matches sharing an unreachable eventId are advanced past in
   // one shot) is the most fragile invariant in the production code: a regression
   // here makes find silently get stuck at the boundary between reachable and
-  // unreachable matches. By omitting `e2`'s panel from the rendered DOM, we
-  // simulate the deeply-nested-under-collapsed-subtask case that motivated
-  // the skip logic, and assert that one Next press lands on `e3`.
+  // unreachable matches. The viewport anchors on e2 itself (the unmounted
+  // event), so the very first candidate the viewport anchor hands back is
+  // the unreachable one — exercising the skip branch directly, rather than
+  // via an incidental next-hop from some other resolved position. By
+  // omitting `e2`'s panel from the rendered DOM, we simulate the
+  // deeply-nested-under-collapsed-subtask case that motivated the skip
+  // logic, and assert that one Next press lands on `e3`.
   it("skips a reachable-but-unmounted event in a single press", async () => {
     const e1 = ev("e1", "wondering one");
     const e2 = ev("e2", "wondering two");
@@ -275,6 +279,7 @@ describe("useTranscriptSearchSource", () => {
       rows,
       selected: "main",
       flattenedNodeIds: ["e1", "e2", "e3"],
+      visibleRange: { startIndex: 1, endIndex: 1 }, // e2 on screen
       panels: [
         { id: "e1", text: "wondering one" },
         // e2 intentionally omitted — its panel never mounts
