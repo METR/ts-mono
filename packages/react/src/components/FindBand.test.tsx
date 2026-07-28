@@ -52,6 +52,17 @@ const MatchCounter: FC<{ count: number }> = ({ count }) => {
   return null;
 };
 
+const MatchLocator: FC<{ index: number | null }> = ({ index }) => {
+  const { registerMatchLocator } = useExtendedFind();
+
+  useEffect(
+    () => registerMatchLocator("find-band-test", () => index),
+    [index, registerMatchLocator]
+  );
+
+  return null;
+};
+
 const renderFindBand = (onClose = vi.fn(), children?: ReactNode) => {
   render(
     <Providers>
@@ -311,6 +322,55 @@ describe("FindBand", () => {
 
     await waitFor(() =>
       expect(screen.getByText("1 of 2").style.visibility).toBe("visible")
+    );
+  });
+
+  const findSelectsContent = () => {
+    windowFind.mockImplementation(() => {
+      const textNode = screen.getByTestId("search-content").firstChild;
+      if (!textNode) return false;
+      const range = document.createRange();
+      range.setStart(textNode, 0);
+      range.setEnd(textNode, 6);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return true;
+    });
+  };
+
+  it("reports a registered locator's ordinal instead of counting presses", async () => {
+    findSelectsContent();
+    const { input } = renderFindBand(
+      vi.fn(),
+      <>
+        <MatchCounter count={280} />
+        <MatchLocator index={44} />
+        <div data-testid="search-content">needle needle</div>
+      </>
+    );
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(screen.getByText("45 of 280").style.visibility).toBe("visible")
+    );
+  });
+
+  it("keeps counting presses when no locator is registered", async () => {
+    findSelectsContent();
+    const { input } = renderFindBand(
+      vi.fn(),
+      <>
+        <MatchCounter count={280} />
+        <div data-testid="search-content">needle needle</div>
+      </>
+    );
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(screen.getByText("1 of 280").style.visibility).toBe("visible")
     );
   });
 });
