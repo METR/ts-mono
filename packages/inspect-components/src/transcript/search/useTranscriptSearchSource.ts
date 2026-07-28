@@ -72,6 +72,18 @@ export function useTranscriptSearchSource(
 
   const eventToRow = useMemo(() => buildEventToRowMap(rows), [rows]);
 
+  // Position of each event in the sample's global order. `findAllMatches`
+  // walks `events` in this order, so it doubles as the ordering of `matches`
+  // and lets the viewport anchor compare positions across rows — the view's
+  // flattened nodes only cover the selected row.
+  const eventOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    events.forEach((event, index) => {
+      if (event.uuid) map.set(event.uuid, index);
+    });
+    return map;
+  }, [events]);
+
   const cacheRef = useRef<{
     events: Event[];
     eventToRow: Map<string, string>;
@@ -141,7 +153,13 @@ export function useTranscriptSearchSource(
       if (range.toString().toLowerCase() !== term.toLowerCase()) return;
       const matches = getMatches(term);
       const match = matchAtSelection(matches, term);
-      if (match) lastResolvedRef.current = { match, term };
+      // A find-shaped selection that maps to no match means the user has moved
+      // somewhere we cannot index. Forget the remembered position rather than
+      // let the next cross-row jump resume from it — a stale ref is what made
+      // Next teleport back to the top of the transcript. A cleared selection
+      // (rangeCount 0, e.g. findExtendedInDOM's deliberate removeAllRanges
+      // before calling us) returns above and leaves the ref intact.
+      lastResolvedRef.current = match ? { match, term } : null;
     };
     document.addEventListener("selectionchange", onSelectionChange);
     return () =>
@@ -189,13 +207,14 @@ export function useTranscriptSearchSource(
       onHeadroomResetAnchor?.(true);
       onHeadroomSetHidden?.(direction === "forward");
 
-      let position = resolvePosition(
+      let position = resolvePosition({
         matches,
-        lastResolvedRef.current,
-        viewNodesRef.current,
-        selectedRef.current,
-        term
-      );
+        term,
+        direction,
+        last: lastResolvedRef.current,
+        view: viewNodesRef.current,
+        eventOrder,
+      });
 
       // Iterate forward/backward until we find a match whose panel actually
       // mounts. Some events (deeply nested under collapsed subtask spans, or
@@ -279,6 +298,7 @@ export function useTranscriptSearchSource(
     },
     [
       getMatches,
+      eventOrder,
       viewNodesRef,
       onSelect,
       setFindTarget,
@@ -322,14 +342,32 @@ function pickNext(
     : matches[(position - 1 + len) % len]!;
 }
 
-function resolvePosition(
-  matches: SampleMatch[],
-  last: { match: SampleMatch; term: string } | null,
-  view: TranscriptViewNodesHandle | null,
-  selected: string | null,
-  term: string
-): number {
-  // Prefer the last-resolved match when the term hasn't changed.
+interface ResolvePositionOptions {
+  matches: SampleMatch[];
+  term: string;
+  direction: FindDirection;
+  last: { match: SampleMatch; term: string } | null;
+  view: TranscriptViewNodesHandle | null;
+  eventOrder: Map<string, number>;
+}
+
+/**
+ * Index of the "current" match — the one `pickNext` advances from.
+ *
+ * Layered, most trustworthy first:
+ *  1. the last match the selection listener resolved, when the term is
+ *     unchanged. That listener sees every `window.find` hit, so this is the
+ *     live selection's position; it is cleared when the selection moves
+ *     somewhere unindexable, so it is never a position the user has left.
+ *  2. the viewport, so a press moves on from what is on screen rather than
+ *     jumping to the top of the transcript.
+ *  3. -1, only when no view is mounted — `pickNext` then starts from the end
+ *     matching the direction, which is right for a fresh search with nothing
+ *     rendered.
+ */
+function resolvePosition(opts: ResolvePositionOptions): number {
+  const { matches, term, direction, last, view, eventOrder } = opts;
+
   if (last && last.term === term) {
     const idx = matches.findIndex(
       (m) =>
@@ -340,17 +378,64 @@ function resolvePosition(
     );
     if (idx !== -1) return idx;
   }
-  // Fallback: first match in the currently-visible row.
+
+  return viewportPosition(matches, direction, view, eventOrder);
+}
+
+/**
+ * Anchor to what is on screen: map the visible nodes into the global event
+ * order, then return the index just outside the viewport in the direction of
+ * travel, so `pickNext` lands on the first match at or beyond the current view.
+ *
+ * Returns -1 when nothing is mounted or no visible node is a known event, which
+ * `pickNext` reads as "no current position".
+ */
+function viewportPosition(
+  matches: SampleMatch[],
+  direction: FindDirection,
+  view: TranscriptViewNodesHandle | null,
+  eventOrder: Map<string, number>
+): number {
   const range = view?.getVisibleRange();
   const flattened = view?.getFlattenedNodes() ?? [];
   if (!range || flattened.length === 0) return -1;
-  const visibleIds = new Set(
-    flattened.slice(range.startIndex, range.endIndex + 1).map((n) => n.id)
-  );
-  const idx = matches.findIndex(
-    (m) => m.rowKey === selected && visibleIds.has(m.eventId)
-  );
-  return idx;
+
+  let minVisible = Infinity;
+  let maxVisible = -Infinity;
+  for (const node of flattened.slice(range.startIndex, range.endIndex + 1)) {
+    const order = eventOrder.get(node.id);
+    // Synthetic node ids (events without a uuid) aren't in the map.
+    if (order === undefined) continue;
+    if (order < minVisible) minVisible = order;
+    if (order > maxVisible) maxVisible = order;
+  }
+  if (minVisible === Infinity) return -1;
+
+  // `matches` is in global event order, so the boundary is a linear scan.
+  if (direction === "forward") {
+    const first = matches.findIndex(
+      (m) => (eventOrder.get(m.eventId) ?? -1) >= minVisible
+    );
+    // Every match sits above the viewport — resume at the end so pickNext
+    // wraps to the top, the only sensible forward move.
+    if (first === -1) return matches.length - 1;
+    // Clamp at 0 rather than returning -1 when the viewport's leading match
+    // is also the very first match overall: -1 is pickNext's reserved
+    // "nothing resolved" sentinel (see its position < 0 branch), which would
+    // wrongly re-land on that same match instead of advancing past it.
+    return Math.max(first - 1, 0);
+  }
+
+  let lastIdx = -1;
+  for (let i = 0; i < matches.length; i++) {
+    if ((eventOrder.get(matches[i]!.eventId) ?? Infinity) <= maxVisible) {
+      lastIdx = i;
+    }
+  }
+  // Every match sits below the viewport — resume at the start so pickNext
+  // wraps to the end.
+  if (lastIdx === -1) return 0;
+  return lastIdx + 1;
 }
 
 /**

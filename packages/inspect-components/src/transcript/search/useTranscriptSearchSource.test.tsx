@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, render } from "@testing-library/react";
 import { useRef } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelEvent } from "@tsmono/inspect-common/types";
 import {
@@ -112,6 +112,7 @@ interface HarnessOptions {
   rows: SwimlaneRow[];
   selected: string;
   flattenedNodeIds?: string[];
+  visibleRange?: { startIndex: number; endIndex: number };
   panels?: { id: string; text: string }[];
   onSelect?: (key: string | null) => void;
   scrollToEvent?: (id: string) => void;
@@ -145,7 +146,8 @@ function renderHarness(opts: HarnessOptions): Harness {
     const viewNodesRef = useRef<TranscriptViewNodesHandle | null>({
       scrollToEvent: opts.scrollToEvent ?? vi.fn(),
       getFlattenedNodes: () => flattened,
-      getVisibleRange: () => ({ startIndex: 0, endIndex: 0 }),
+      getVisibleRange: () =>
+        opts.visibleRange ?? { startIndex: 0, endIndex: 0 },
     });
     useTranscriptSearchSource({
       events: opts.events,
@@ -194,6 +196,14 @@ function selectTermIn(panelId: string, term: string): void {
 // =============================================================================
 
 describe("useTranscriptSearchSource", () => {
+  afterEach(() => {
+    // Tests that select text in a stray node appended directly to
+    // document.body (outside the React tree, so testing-library's automatic
+    // cleanup never removes it) must also clear the document selection —
+    // otherwise it would persist into later tests.
+    window.getSelection()?.removeAllRanges();
+  });
+
   it("counts matches across all rows", () => {
     const { events, rows } = twoRowFixture();
     const h = renderHarness({ events, rows, selected: "main" });
@@ -329,5 +339,134 @@ describe("useTranscriptSearchSource", () => {
     sel?.addRange(range);
 
     expect(h.ordinalAt("wondering")).toBeNull();
+    stray.remove();
+  });
+
+  // Five events, one match each. The viewport shows only e3, and nothing has
+  // been resolved yet — the old code returned -1 here and pickNext sent the
+  // user to matches[0], i.e. the top of the transcript.
+  const fiveEventFixture = () =>
+    singleRowFixture([
+      ev("e1", "wondering one"),
+      ev("e2", "wondering two"),
+      ev("e3", "wondering three"),
+      ev("e4", "wondering four"),
+      ev("e5", "wondering five"),
+    ]);
+
+  const allPanels = ["e1", "e2", "e3", "e4", "e5"].map((id) => ({
+    id,
+    text: `wondering ${id}`,
+  }));
+
+  it("anchors a forward search on the viewport instead of jumping to the top", async () => {
+    const { events, rows } = fiveEventFixture();
+    const scrollToEvent = vi.fn();
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3", "e4", "e5"],
+      visibleRange: { startIndex: 2, endIndex: 2 }, // e3 on screen
+      panels: allPanels,
+      scrollToEvent,
+    });
+
+    await act(async () => {
+      await h.search("wondering", "forward");
+    });
+
+    // First match at or after the top of the viewport is e3 itself.
+    expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e3");
+  });
+
+  it("anchors a backward search on the viewport instead of jumping to the end", async () => {
+    const { events, rows } = fiveEventFixture();
+    const scrollToEvent = vi.fn();
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3", "e4", "e5"],
+      visibleRange: { startIndex: 2, endIndex: 2 }, // e3 on screen
+      panels: allPanels,
+      scrollToEvent,
+    });
+
+    await act(async () => {
+      await h.search("wondering", "backward");
+    });
+
+    // Last match at or before the bottom of the viewport is e3 itself.
+    expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e3");
+  });
+
+  it("resumes from the last selected match", async () => {
+    const { events, rows } = fiveEventFixture();
+    const scrollToEvent = vi.fn();
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3", "e4", "e5"],
+      visibleRange: { startIndex: 0, endIndex: 0 },
+      panels: allPanels,
+      scrollToEvent,
+    });
+    h.countAll("wondering"); // arms the listener's active term
+    selectTermIn("e4", "wondering");
+    // Let the selectionchange listener run before searching.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      await h.search("wondering", "forward");
+    });
+
+    expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e5");
+  });
+
+  it("drops a remembered position the selection has moved away from", async () => {
+    const { events, rows } = fiveEventFixture();
+    const scrollToEvent = vi.fn();
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1", "e2", "e3", "e4", "e5"],
+      visibleRange: { startIndex: 1, endIndex: 1 }, // e2 on screen
+      panels: allPanels,
+      scrollToEvent,
+    });
+    h.countAll("wondering");
+    // Remember e4...
+    selectTermIn("e4", "wondering");
+    // Let the selectionchange listener run before searching.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    // ...then land on text that maps to no match (the stale-ref teleport).
+    const stray = document.createElement("div");
+    stray.textContent = "wondering elsewhere";
+    document.body.appendChild(stray);
+    const range = document.createRange();
+    range.setStart(stray.firstChild!, 0);
+    range.setEnd(stray.firstChild!, "wondering".length);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    // Let the selectionchange listener run before searching.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await act(async () => {
+      await h.search("wondering", "forward");
+    });
+
+    // Falls back to the viewport (e2), not to the abandoned e4 → e5.
+    expect(scrollToEvent.mock.calls.at(-1)?.[0]).toBe("e2");
+    stray.remove();
   });
 });
