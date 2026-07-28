@@ -92,6 +92,22 @@ describe("FindBand", () => {
     vi.restoreAllMocks();
   });
 
+  // Makes the mocked find behave like a real one by leaving a selection
+  // behind on a <div data-testid="search-content"> in the rendered tree.
+  const findSelectsContent = () => {
+    windowFind.mockImplementation(() => {
+      const textNode = screen.getByTestId("search-content").firstChild;
+      if (!textNode) return false;
+      const range = document.createRange();
+      range.setStart(textNode, 0);
+      range.setEnd(textNode, 6);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return true;
+    });
+  };
+
   it("closes on Escape", () => {
     const onClose = vi.fn();
     const { input } = renderFindBand(onClose);
@@ -266,17 +282,7 @@ describe("FindBand", () => {
   });
 
   it("refreshes the match count after counters re-register", async () => {
-    windowFind.mockImplementation(() => {
-      const textNode = screen.getByTestId("search-content").firstChild;
-      if (!textNode) return false;
-      const range = document.createRange();
-      range.setStart(textNode, 0);
-      range.setEnd(textNode, 6);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      return true;
-    });
+    findSelectsContent();
     const ui = (count: number) => (
       <Providers>
         <FindBand onClose={vi.fn()} />
@@ -299,17 +305,7 @@ describe("FindBand", () => {
   });
 
   it("shows the registered match count and current index", async () => {
-    windowFind.mockImplementation(() => {
-      const textNode = screen.getByTestId("search-content").firstChild;
-      if (!textNode) return false;
-      const range = document.createRange();
-      range.setStart(textNode, 0);
-      range.setEnd(textNode, 6);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      return true;
-    });
+    findSelectsContent();
     const { input } = renderFindBand(
       vi.fn(),
       <>
@@ -324,20 +320,6 @@ describe("FindBand", () => {
       expect(screen.getByText("1 of 2").style.visibility).toBe("visible")
     );
   });
-
-  const findSelectsContent = () => {
-    windowFind.mockImplementation(() => {
-      const textNode = screen.getByTestId("search-content").firstChild;
-      if (!textNode) return false;
-      const range = document.createRange();
-      range.setStart(textNode, 0);
-      range.setEnd(textNode, 6);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      return true;
-    });
-  };
 
   it("reports a registered locator's ordinal instead of counting presses", async () => {
     findSelectsContent();
