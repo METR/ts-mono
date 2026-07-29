@@ -47,14 +47,22 @@ export interface AppConfigBootstrap {
 }
 
 /**
+ * An api installed by an external embedder via `setApi`. When set, it supersedes
+ * the URL/DOM-derived api in `resolveBootstrap`. Undefined for standalone
+ * `inspect view`, which resolves its own api.
+ */
+let apiOverride: ClientAPI | undefined;
+
+/**
  * Resolve the bootstrap from the invocation-time log source. The single place the
- * URL log source is parsed (see `app_config/urlLogSource.ts`).
+ * URL log source is parsed (see `app_config/urlLogSource.ts`). An embedder-
+ * supplied api (`setApi`) takes precedence over the URL/DOM-derived one.
  */
 export const resolveBootstrap = (): AppConfigBootstrap => {
   const source = parseUrlLogSource(window.location.search);
   const singleFileMode = detectInitialSingleFileMode(source, document);
   return {
-    api: resolveApi(source),
+    api: apiOverride ?? resolveApi(source),
     singleFileMode,
     loader: singleFileMode ? "direct" : "replicator",
     logFile: source.kind === "file" ? source.logFile : undefined,
@@ -171,6 +179,26 @@ export const peekAppConfig = (): AppConfig | undefined => appConfig;
 /** Seed the resolved singleton directly. For tests. */
 export const initAppConfig = (config: AppConfig): AppConfig =>
   (appConfig = config);
+
+/**
+ * Install a client API from an external embedder hosting the viewer in-process
+ * (e.g. one that serves logs through its own authenticated / multiplexed
+ * backend). The supplied api overrides the one the viewer would otherwise
+ * resolve from the URL/DOM (`resolveApi`), so every `getApi()` consumer — the
+ * store, log-data sync, download buttons — routes through it. Standalone
+ * `inspect view` never calls this and is unaffected.
+ *
+ * Call before `initializeStore` / rendering `<App/>`. Calling it again with a
+ * fresh api re-points the viewer at a different log source: it clears the
+ * memoized bootstrap and resolved config (and its query cache) so the next
+ * resolution runs against the new api.
+ */
+export const setApi = (api: ClientAPI): void => {
+  apiOverride = api;
+  bootstrap = undefined;
+  appConfig = undefined;
+  queryClient.removeQueries({ queryKey: APP_CONFIG_KEY });
+};
 
 /**
  * Update the resolved `logDir` — embedded (VS Code) live navigation, the one

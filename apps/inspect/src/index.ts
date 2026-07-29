@@ -16,6 +16,10 @@ export { clientApi } from "./client/api/client-api";
 export { default as simpleHttpApi } from "./client/api/static-http/api-static-http.ts";
 export { viewServerApi as createViewServerApi } from "./client/api/view-server/api-view-server.ts";
 
+// Embedder api injection — install a custom (e.g. authenticated / multiplexed)
+// client API before initializing the store and rendering <App/>.
+export { setApi } from "./app_config";
+
 // Client API - Types
 export type {
   Capabilities,

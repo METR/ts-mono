@@ -6,6 +6,7 @@ export {
   getAppConfig,
   getLogDir,
   initAppConfig, // TODO: Exported for tests?! review
+  setApi,
   setLogRoot,
 } from "./appConfig";
 export { AppConfigGate } from "./AppConfigGate";
