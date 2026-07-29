@@ -11,7 +11,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtendedFindProvider } from "../components/ExtendedFindContext";
 import { ComponentStateProvider } from "../state/ComponentStateContext";
 
-import { VirtualList } from "./VirtualList";
+import {
+  countMatchesInTexts,
+  findScanOrigin,
+  itemOccurrenceAtSelection,
+  nextMatchingItem,
+  occurrenceOrdinal,
+  VirtualList,
+} from "./VirtualList";
 
 // Minimal Map-backed ComponentStateHooks (VirtualList persists its scroll
 // snapshot through useProperty; the store itself is irrelevant here).
@@ -497,5 +504,216 @@ describe("VirtualList persist flush on unmount", () => {
     unmount();
     vi.advanceTimersByTime(50);
     expect(el.scrollTop).toBe(300);
+  });
+});
+
+describe("nextMatchingItem", () => {
+  // Matches at 2, 3, 4 (a dense cluster, like a code block using the term on
+  // adjacent lines) and a far one at 9.
+  const texts = [
+    ["nothing"],
+    ["nothing"],
+    ["cancel one"],
+    ["cancel two"],
+    ["cancel three"],
+    ["nothing"],
+    ["nothing"],
+    ["nothing"],
+    ["nothing"],
+    ["cancel far"],
+  ];
+  const term = ["cancel"];
+
+  it("advances by exactly one match per call, walking a dense cluster", () => {
+    // Regression guard for the cycling: driving the scan from a viewport's
+    // trailing edge skipped 3 and 4 (both inside the rendered window after
+    // centring 2), which is what produced the short repeating cycle.
+    const walk: number[] = [];
+    let cursor = 1;
+    for (let i = 0; i < 4; i++) {
+      const next = nextMatchingItem(texts, term, cursor, true);
+      expect(next).not.toBeNull();
+      walk.push(next!);
+      cursor = next!;
+    }
+    expect(walk).toEqual([2, 3, 4, 9]);
+  });
+
+  it("walks backward symmetrically", () => {
+    const walk: number[] = [];
+    let cursor = 9;
+    for (let i = 0; i < 3; i++) {
+      const next = nextMatchingItem(texts, term, cursor, false);
+      walk.push(next!);
+      cursor = next!;
+    }
+    expect(walk).toEqual([4, 3, 2]);
+  });
+
+  it("wraps forward past the last match", () => {
+    expect(nextMatchingItem(texts, term, 9, true)).toBe(2);
+  });
+
+  it("wraps backward past the first match", () => {
+    expect(nextMatchingItem(texts, term, 2, false)).toBe(9);
+  });
+
+  it("re-finds the only matching item so window.find can walk it internally", () => {
+    const single = [["nothing"], ["cancel here"], ["nothing"]];
+    expect(nextMatchingItem(single, term, 1, true)).toBe(1);
+  });
+
+  it("tolerates a negative origin (empty list seeded from an empty viewport)", () => {
+    const atZero = [["cancel first"], ["nothing"]];
+    expect(nextMatchingItem(atZero, term, -1, true)).toBe(0);
+  });
+
+  it("returns null when nothing matches", () => {
+    expect(nextMatchingItem(texts, ["absent"], 0, true)).toBeNull();
+  });
+
+  it("returns null for an empty term or empty list", () => {
+    expect(nextMatchingItem(texts, [""], 0, true)).toBeNull();
+    expect(nextMatchingItem([], term, 0, true)).toBeNull();
+  });
+});
+
+describe("occurrenceOrdinal", () => {
+  const texts = [["cancel a cancel b"], ["none"], ["cancel c"]];
+
+  it("counts occurrences in preceding items, matching the displayed total", () => {
+    // Item 0 holds two occurrences, so item 2's first occurrence is ordinal 2 —
+    // and countMatchesInTexts totals 3, so the band reads "3 of 3".
+    expect(occurrenceOrdinal(texts, "cancel", 2, 0)).toBe(2);
+    expect(countMatchesInTexts(texts, "cancel")).toBe(3);
+  });
+
+  it("adds the occurrence index within the item", () => {
+    expect(occurrenceOrdinal(texts, "cancel", 0, 0)).toBe(0);
+    expect(occurrenceOrdinal(texts, "cancel", 0, 1)).toBe(1);
+  });
+
+  it("clamps an item index past the end of the list", () => {
+    expect(occurrenceOrdinal(texts, "cancel", 99, 0)).toBe(3);
+  });
+});
+
+describe("itemOccurrenceAtSelection", () => {
+  const selectIn = (node: Text, start: number, length: number) => {
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, start + length);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  };
+
+  const build = () => {
+    const root = document.createElement("div");
+    root.innerHTML =
+      '<div data-item-index="0"><span>cancel one</span></div>' +
+      '<div data-item-index="3"><span>x cancel y cancel z</span></div>';
+    document.body.appendChild(root);
+    return root;
+  };
+
+  afterEach(() => {
+    window.getSelection()?.removeAllRanges();
+    document.body.innerHTML = "";
+  });
+
+  it("reports the row index and the occurrence within it", () => {
+    const root = build();
+    const span = root.querySelectorAll("span")[1]!;
+    const text = span.firstChild as Text;
+    // Select the SECOND "cancel" in the row (offset 11).
+    selectIn(text, 11, 6);
+
+    expect(itemOccurrenceAtSelection(root, "cancel")).toEqual({
+      itemIndex: 3,
+      occurrence: 1,
+    });
+  });
+
+  it("reports occurrence 0 for the first match in a row", () => {
+    const root = build();
+    const text = root.querySelectorAll("span")[1]!.firstChild as Text;
+    selectIn(text, 2, 6);
+
+    expect(itemOccurrenceAtSelection(root, "cancel")).toEqual({
+      itemIndex: 3,
+      occurrence: 0,
+    });
+  });
+
+  it("rejects a selection belonging to another list", () => {
+    // Two lists mounted together must not claim each other's selections, or
+    // the ordinal would index into the wrong corpus.
+    const mine = build();
+    const theirs = document.createElement("div");
+    theirs.innerHTML = '<div data-item-index="0"><span>cancel</span></div>';
+    document.body.appendChild(theirs);
+    const text = theirs.querySelector("span")!.firstChild as Text;
+    selectIn(text, 0, 6);
+
+    expect(itemOccurrenceAtSelection(theirs, "cancel")).not.toBeNull();
+    expect(itemOccurrenceAtSelection(mine, "cancel")).toBeNull();
+  });
+
+  it("returns null with no selection, or a selection outside any row", () => {
+    const root = build();
+    expect(itemOccurrenceAtSelection(root, "cancel")).toBeNull();
+
+    const stray = document.createElement("div");
+    stray.textContent = "cancel";
+    root.appendChild(stray);
+    selectIn(stray.firstChild as Text, 0, 6);
+    expect(itemOccurrenceAtSelection(root, "cancel")).toBeNull();
+  });
+});
+
+describe("findScanOrigin", () => {
+  // After centring a match, the rendered window straddles it. The old code
+  // scanned from range.endIndex, so everything between the match and the
+  // window's trailing edge was unreachable, and a press arriving before the
+  // post-render commit reused the same origin entirely.
+  const range = { startIndex: 20, endIndex: 40 };
+
+  it("uses the session cursor, not the viewport, once a term is being walked", () => {
+    expect(
+      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 100, true, range)
+    ).toBe(30);
+    expect(
+      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 100, false, range)
+    ).toBe(30);
+  });
+
+  it("is unaffected by a viewport that has not caught up with the scroll", () => {
+    const stale = { startIndex: 0, endIndex: 0 };
+    expect(
+      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 100, true, stale)
+    ).toBe(30);
+  });
+
+  it("seeds a first press past the rendered window, not inside it", () => {
+    // This path runs only once window.find has exhausted the rendered DOM, so
+    // every on-screen match has already been walked and seeding inside the
+    // window would re-cover it. Measured on the nanogpt sample: seeding at
+    // startIndex - 1 made the first two presses revisit row 0.
+    expect(findScanOrigin(null, "cancel", 100, true, range)).toBe(40);
+    expect(findScanOrigin(null, "cancel", 100, false, range)).toBe(20);
+  });
+
+  it("re-seeds when the term changes", () => {
+    expect(
+      findScanOrigin({ term: "other", index: 30 }, "cancel", 100, true, range)
+    ).toBe(40);
+  });
+
+  it("re-seeds when the remembered index no longer addresses the data", () => {
+    // The list shrank under the session (streaming chat, filter applied).
+    expect(
+      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 10, true, range)
+    ).toBe(40);
   });
 });

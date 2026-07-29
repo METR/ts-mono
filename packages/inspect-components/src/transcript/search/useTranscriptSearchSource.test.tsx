@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -197,6 +197,12 @@ function selectTermIn(panelId: string, term: string): void {
 
 describe("useTranscriptSearchSource", () => {
   afterEach(() => {
+    // Unmount first: a successful searchFn schedules the 300ms
+    // reselectTermInPanel self-correction, and only the hook's unmount effect
+    // clears it. Left mounted, that timer fires after vitest has torn the
+    // jsdom environment down and throws "document is not defined" as an
+    // unhandled error, failing the run even though every test passed.
+    cleanup();
     // Tests that select text in a stray node appended directly to
     // document.body (outside the React tree, so testing-library's automatic
     // cleanup never removes it) must also clear the document selection —
