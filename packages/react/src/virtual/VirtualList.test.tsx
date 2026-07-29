@@ -13,6 +13,7 @@ import { ComponentStateProvider } from "../state/ComponentStateContext";
 
 import {
   countMatchesInTexts,
+  cursorAdvances,
   findScanOrigin,
   itemOccurrenceAtSelection,
   nextMatchingItem,
@@ -593,8 +594,26 @@ describe("occurrenceOrdinal", () => {
     expect(occurrenceOrdinal(texts, "cancel", 0, 1)).toBe(1);
   });
 
-  it("clamps an item index past the end of the list", () => {
-    expect(occurrenceOrdinal(texts, "cancel", 99, 0)).toBe(3);
+  it("declines an occurrence the item's search text cannot account for", () => {
+    // The DOM can render text the search accessor never contributed (a chat
+    // row renders its role above its content), so a rendered occurrence index
+    // can overrun the counted total. Reporting it would render "2 of 1".
+    expect(occurrenceOrdinal(texts, "cancel", 2, 1)).toBeNull();
+    expect(occurrenceOrdinal(texts, "cancel", 0, 2)).toBeNull();
+  });
+
+  it("declines an item index past the end of the list", () => {
+    expect(occurrenceOrdinal(texts, "cancel", 99, 0)).toBeNull();
+  });
+
+  it("never reports an ordinal the total cannot contain", () => {
+    const total = countMatchesInTexts(texts, "cancel");
+    for (let item = 0; item < texts.length + 1; item++) {
+      for (let occ = 0; occ < 4; occ++) {
+        const ordinal = occurrenceOrdinal(texts, "cancel", item, occ);
+        if (ordinal !== null) expect(ordinal).toBeLessThan(total);
+      }
+    }
   });
 });
 
@@ -678,20 +697,28 @@ describe("findScanOrigin", () => {
   // window's trailing edge was unreachable, and a press arriving before the
   // post-render commit reused the same origin entirely.
   const range = { startIndex: 20, endIndex: 40 };
+  const SESSION = 7;
+  const cursor = (index: number, term = "cancel", session = SESSION) => ({
+    term,
+    index,
+    session,
+  });
 
   it("uses the session cursor, not the viewport, once a term is being walked", () => {
     expect(
-      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 100, true, range)
+      findScanOrigin(cursor(30), "cancel", SESSION, 100, true, range)
     ).toBe(30);
     expect(
-      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 100, false, range)
+      findScanOrigin(cursor(30), "cancel", SESSION, 100, false, range)
     ).toBe(30);
   });
 
   it("is unaffected by a viewport that has not caught up with the scroll", () => {
+    // The whole point of the cursor: the viewport trails its own scroll, so
+    // it must not be consulted while a walk is in progress.
     const stale = { startIndex: 0, endIndex: 0 };
     expect(
-      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 100, true, stale)
+      findScanOrigin(cursor(30), "cancel", SESSION, 100, true, stale)
     ).toBe(30);
   });
 
@@ -700,20 +727,89 @@ describe("findScanOrigin", () => {
     // every on-screen match has already been walked and seeding inside the
     // window would re-cover it. Measured on the nanogpt sample: seeding at
     // startIndex - 1 made the first two presses revisit row 0.
-    expect(findScanOrigin(null, "cancel", 100, true, range)).toBe(40);
-    expect(findScanOrigin(null, "cancel", 100, false, range)).toBe(20);
+    expect(findScanOrigin(null, "cancel", SESSION, 100, true, range)).toBe(40);
+    expect(findScanOrigin(null, "cancel", SESSION, 100, false, range)).toBe(20);
   });
 
   it("re-seeds when the term changes", () => {
     expect(
-      findScanOrigin({ term: "other", index: 30 }, "cancel", 100, true, range)
+      findScanOrigin(cursor(30, "other"), "cancel", SESSION, 100, true, range)
     ).toBe(40);
   });
 
   it("re-seeds when the remembered index no longer addresses the data", () => {
     // The list shrank under the session (streaming chat, filter applied).
+    expect(findScanOrigin(cursor(30), "cancel", SESSION, 10, true, range)).toBe(
+      40
+    );
+  });
+
+  it("re-seeds when the remembered index is one past the last item", () => {
+    // Exactly the boundary: a list that shrank by one leaves the cursor
+    // addressing a slot that no longer exists.
+    expect(findScanOrigin(cursor(10), "cancel", SESSION, 10, true, range)).toBe(
+      40
+    );
+  });
+
+  it("re-seeds a cursor left over from an earlier find session", () => {
+    // The find band unmounts on Escape but the list does not, so a cursor
+    // outlives its session. Reopening find after scrolling elsewhere must not
+    // resume hundreds of rows away and strand everything in between.
     expect(
-      findScanOrigin({ term: "cancel", index: 30 }, "cancel", 10, true, range)
-    ).toBe(40);
+      findScanOrigin(
+        cursor(400, "cancel", SESSION - 1),
+        "cancel",
+        SESSION,
+        1000,
+        true,
+        {
+          startIndex: 0,
+          endIndex: 14,
+        }
+      )
+    ).toBe(14);
+  });
+
+  it("keeps a far-from-viewport cursor that belongs to the current session", () => {
+    // A long jump legitimately leaves the cursor far outside a viewport that
+    // has not committed yet; only session identity may reject a cursor.
+    expect(
+      findScanOrigin(cursor(400), "cancel", SESSION, 1000, true, {
+        startIndex: 0,
+        endIndex: 14,
+      })
+    ).toBe(400);
+  });
+});
+
+describe("cursorAdvances", () => {
+  const cursor = { term: "cancel", index: 1711, session: 1 };
+
+  it("rejects a selection behind the cursor during a forward walk", () => {
+    // The deadlock this exists to prevent: the scroll to row 1711 never
+    // commits, window.find re-lands on row 1705 inside the stale window, and
+    // an unguarded update pins the cursor there for every later press.
+    expect(cursorAdvances(cursor, "cancel", 1705, "forward")).toBe(false);
+  });
+
+  it("accepts a selection ahead of the cursor during a forward walk", () => {
+    // window.find walking occurrences within the rendered rows legitimately
+    // moves the cursor on, so the next extended press does not re-cover them.
+    expect(cursorAdvances(cursor, "cancel", 1715, "forward")).toBe(true);
+  });
+
+  it("mirrors the rule when walking backward", () => {
+    expect(cursorAdvances(cursor, "cancel", 1715, "backward")).toBe(false);
+    expect(cursorAdvances(cursor, "cancel", 1705, "backward")).toBe(true);
+  });
+
+  it("rejects a selection on the cursor's own row", () => {
+    expect(cursorAdvances(cursor, "cancel", 1711, "forward")).toBe(false);
+  });
+
+  it("accepts anything when the term changed or nothing is remembered", () => {
+    expect(cursorAdvances(cursor, "other", 3, "forward")).toBe(true);
+    expect(cursorAdvances(null, "cancel", 3, "forward")).toBe(true);
   });
 });

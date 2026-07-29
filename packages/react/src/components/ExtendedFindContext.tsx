@@ -53,6 +53,10 @@ interface ExtendedFindContextType {
    * without a count.
    */
   ordinalAtSelection: (term: string) => number | null;
+  /** Open a new find session; call when the find band mounts. */
+  beginFindSession: () => void;
+  /** Identifies the current find session (see `beginFindSession`). */
+  getFindSessionId: () => number;
   // Bumped on every counter (un)registration. Counters re-register when
   // their underlying data changes, so this doubles as a cheap content
   // version for invalidating cached countAllMatches results.
@@ -71,6 +75,15 @@ export const ExtendedFindProvider = ({
   const virtualLists = useRef<Map<string, ExtendedFindFn>>(new Map());
   const matchCounters = useRef<Map<string, ExtendedCountFn>>(new Map());
   const matchLocators = useRef<Map<string, MatchLocatorFn>>(new Map());
+  // Registration id → the sequence number it was first registered under.
+  // Outlives unregistration on purpose; see registerMatchCounter.
+  const counterOrder = useRef<Map<string, number>>(new Map());
+  const nextCounterSeq = useRef(0);
+  // Bumped each time the find band opens. Sources that carry a navigation
+  // cursor across presses tag it with this and discard it when it changes —
+  // the band unmounts on close but the lists it searched do not, so without
+  // it a cursor would survive into an unrelated later search.
+  const findSession = useRef(0);
   const matchCountersVersion = useRef(0);
 
   const extendedFindTerm = useCallback(
@@ -130,6 +143,19 @@ export const ExtendedFindProvider = ({
 
   const registerMatchCounter = useCallback(
     (id: string, countFn: ExtendedCountFn): (() => void) => {
+      // Remember the order an id was FIRST seen in, and never forget it.
+      // `ordinalAtSelection` turns each non-claiming source's count into an
+      // offset, so the enumeration order has to be stable — and Map order is
+      // not: re-registration is delete-then-set, and `Map.set` on a deleted
+      // key appends at the tail. A source whose countFn identity changes on
+      // every render (an un-memoised list) would otherwise keep jumping to
+      // the end and shifting every other source's offset, making the counter
+      // jump with no corresponding navigation. Entries are kept after
+      // unregistration so a remount lands back in its original slot; the map
+      // is keyed by registration id, so it stays tiny.
+      if (!counterOrder.current.has(id)) {
+        counterOrder.current.set(id, nextCounterSeq.current++);
+      }
       matchCounters.current.set(id, countFn);
       matchCountersVersion.current++;
       return () => {
@@ -137,6 +163,23 @@ export const ExtendedFindProvider = ({
         matchCountersVersion.current++;
       };
     },
+    []
+  );
+
+  const beginFindSession = useCallback(() => {
+    findSession.current++;
+  }, []);
+
+  const getFindSessionId = useCallback(() => findSession.current, []);
+
+  /** Registered counter ids in stable first-registration order. */
+  const orderedCounterIds = useCallback(
+    (): string[] =>
+      [...matchCounters.current.keys()].sort(
+        (a, b) =>
+          (counterOrder.current.get(a) ?? 0) -
+          (counterOrder.current.get(b) ?? 0)
+      ),
     []
   );
 
@@ -150,15 +193,20 @@ export const ExtendedFindProvider = ({
     []
   );
 
-  const ordinalAtSelection = useCallback((term: string): number | null => {
-    let offset = 0;
-    for (const [id, countFn] of matchCounters.current) {
-      const idx = matchLocators.current.get(id)?.(term) ?? null;
-      if (idx !== null) return offset + idx;
-      offset += countFn(term);
-    }
-    return null;
-  }, []);
+  const ordinalAtSelection = useCallback(
+    (term: string): number | null => {
+      let offset = 0;
+      for (const id of orderedCounterIds()) {
+        const countFn = matchCounters.current.get(id);
+        if (countFn === undefined) continue;
+        const idx = matchLocators.current.get(id)?.(term) ?? null;
+        if (idx !== null) return offset + idx;
+        offset += countFn(term);
+      }
+      return null;
+    },
+    [orderedCounterIds]
+  );
 
   const getMatchCountersVersion = useCallback(
     () => matchCountersVersion.current,
@@ -172,6 +220,8 @@ export const ExtendedFindProvider = ({
     registerMatchCounter,
     registerMatchLocator,
     ordinalAtSelection,
+    beginFindSession,
+    getFindSessionId,
     getMatchCountersVersion,
   };
 

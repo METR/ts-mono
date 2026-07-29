@@ -39,6 +39,7 @@ export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
     countAllMatches,
     getMatchCountersVersion,
     ordinalAtSelection,
+    beginFindSession,
   } = useExtendedFind();
   const setFindTarget = useFindTargetSetter();
   const lastFoundItem = useRef<{
@@ -247,6 +248,17 @@ export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
       setFindTarget(null);
     };
   }, [setFindTarget]);
+
+  // Opening the band starts a new find session. Sources that carry a
+  // navigation cursor across presses key it to this, so a cursor left over
+  // from the last time find was open is not resumed after the user has
+  // scrolled somewhere else in between. Deliberately its own effect: folding
+  // it into the mount effect above ties it to that effect's other
+  // dependencies, and a re-run would bump the session mid-search and discard
+  // the cursor on every press.
+  useEffect(() => {
+    beginFindSession();
+  }, [beginFindSession]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {

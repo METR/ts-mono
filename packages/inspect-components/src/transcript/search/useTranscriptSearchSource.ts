@@ -14,7 +14,9 @@ import type { TranscriptViewNodesHandle } from "../TranscriptViewNodes";
 import {
   buildEventToRowMap,
   findAllMatches,
+  findVariantPositions,
   SampleMatch,
+  searchVariants,
 } from "./sampleSearch";
 
 const DEFAULT_ID = "transcript-sample";
@@ -511,27 +513,23 @@ function matchAtSelection(
   if (!el) return null;
   const eventId = el.id;
 
-  const lowered = term.toLowerCase();
+  // Count under the same variants `findAllMatches` enumerated, or the
+  // occurrence index computed here would address a different match than the
+  // one the user selected. A quoted term is the case that breaks: the match
+  // list counts every bare `role`, so counting only literal `"role"` in the
+  // DOM maps the selection onto some earlier match entirely.
+  const variants = searchVariants(term);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let occurrenceInEvent = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
     const textNode = node as Text;
-    if (textNode === range.startContainer) {
-      const head = textNode.data.slice(0, range.startOffset).toLowerCase();
-      let from = 0;
-      while ((from = head.indexOf(lowered, from)) !== -1) {
-        occurrenceInEvent++;
-        from += lowered.length;
-      }
-      break;
-    }
-    const text = textNode.data.toLowerCase();
-    let from = 0;
-    while ((from = text.indexOf(lowered, from)) !== -1) {
-      occurrenceInEvent++;
-      from += lowered.length;
-    }
+    const atSelection = textNode === range.startContainer;
+    const text = (
+      atSelection ? textNode.data.slice(0, range.startOffset) : textNode.data
+    ).toLowerCase();
+    occurrenceInEvent += findVariantPositions(text, variants).length;
+    if (atSelection) break;
   }
 
   let seen = 0;

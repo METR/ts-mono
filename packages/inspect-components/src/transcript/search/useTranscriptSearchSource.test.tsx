@@ -332,6 +332,33 @@ describe("useTranscriptSearchSource", () => {
     expect(h.ordinalAt("wondering")).toBe(1);
   });
 
+  it("indexes a quoted term under the same variants the match list counted", () => {
+    // findAllMatches counts BOTH `"role"` and the unquoted `role`, so an
+    // ordinal derived from counting only the literal quoted form maps the
+    // selection onto an earlier, unrelated match. Here the event holds a bare
+    // `role` before the quoted one, so the quoted occurrence is match 1.
+    const { events, rows } = singleRowFixture([ev("e1", 'role and "role"')]);
+    const h = renderHarness({
+      events,
+      rows,
+      selected: "main",
+      flattenedNodeIds: ["e1"],
+      panels: [{ id: "e1", text: 'role and "role"' }],
+    });
+    expect(h.countAll('"role"')).toBe(2);
+
+    // Select the quoted occurrence, which starts at index 9.
+    const textNode = document.getElementById("e1")!.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(textNode, 9);
+    range.setEnd(textNode, 15);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+
+    expect(h.ordinalAt('"role"')).toBe(1);
+  });
+
   it("reports no ordinal for a selection outside any event panel", () => {
     const { events, rows } = singleRowFixture([ev("e1", "wondering one")]);
     const h = renderHarness({

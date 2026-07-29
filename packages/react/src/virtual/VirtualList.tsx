@@ -15,6 +15,7 @@ import {
   useExtendedFind,
   type ExtendedCountFn,
   type ExtendedFindFn,
+  type FindDirection,
   type MatchLocatorFn,
 } from "../components/ExtendedFindContext";
 import { prepareSearchTerm } from "../components/prepareSearchTerm";
@@ -83,10 +84,8 @@ export const countMatchesInTexts = (
  * Index of the next item matching any of `lowerVariants`, scanning from `from`
  * in `direction` and wrapping once.
  *
- * `from` is the item the find session is standing on, NOT a viewport bound.
- * Callers seed it from the viewport only for the first press of a new term,
- * biased so the scan begins AT the leading visible row (`startIndex - 1`
- * forward, `endIndex + 1` backward) rather than past the trailing one.
+ * `from` is the item the find session is standing on, NOT a viewport bound —
+ * see `findScanOrigin` for how it is chosen and when the viewport seeds it.
  *
  * The final step revisits `from` itself, so a list whose only match is the
  * current item re-finds that item — letting `window.find` walk the occurrences
@@ -111,6 +110,13 @@ export const nextMatchingItem = (
   return null;
 };
 
+/** The match a find session is standing on, tagged with the session it belongs to. */
+export interface FindCursor {
+  term: string;
+  index: number;
+  session: number;
+}
+
 /**
  * Where the next scan starts.
  *
@@ -125,44 +131,87 @@ export const nextMatchingItem = (
  * edge of the rendered window: this path only runs once `window.find` has
  * exhausted the rendered DOM, so every on-screen match has already been
  * walked and starting inside the window would re-cover it.
+ *
+ * A cursor is only trusted within the find session that created it. The find
+ * band unmounts on Escape but the list does not, so the cursor outlives it:
+ * without the session check, closing find at item 400, scrolling back to the
+ * top and searching the same term again would resume at 401 and leave
+ * everything in between unreachable. Session identity is the right test here
+ * rather than proximity to the viewport — the viewport is precisely the
+ * signal the cursor exists to stop trusting, so validating one against the
+ * other would reject a good cursor after a long jump and saw back and forth.
  */
 export const findScanOrigin = (
-  cursor: { term: string; index: number } | null,
+  cursor: FindCursor | null,
   term: string,
+  sessionId: number,
   itemCount: number,
   isForward: boolean,
   range: { startIndex: number; endIndex: number }
 ): number => {
-  if (cursor && cursor.term === term && cursor.index < itemCount) {
+  if (
+    cursor &&
+    cursor.term === term &&
+    cursor.session === sessionId &&
+    cursor.index < itemCount
+  ) {
     return cursor.index;
   }
   return isForward ? range.endIndex : range.startIndex;
 };
 
 /**
+ * Whether a selection observed at `itemIndex` should move the find cursor.
+ *
+ * Only ever with the direction of travel. `window.find` restarts from the top
+ * of the rendered DOM whenever it cannot advance, so an unguarded update drags
+ * the cursor back to a row already passed — and if the scroll to the next
+ * match never commits (its row stays unrendered), that pins the cursor and
+ * find deadlocks on a single row. Measured on a 1,700-row chat: without this
+ * the walk stalls at row 1705 and never reaches the rest of the list; with it,
+ * 80 presses reach 29 rows instead of 13.
+ *
+ * A different term means a new walk, so anything is an advance.
+ */
+export const cursorAdvances = (
+  cursor: FindCursor | null,
+  term: string,
+  itemIndex: number,
+  direction: FindDirection
+): boolean => {
+  if (!cursor || cursor.term !== term) return true;
+  return direction === "forward"
+    ? itemIndex > cursor.index
+    : itemIndex < cursor.index;
+};
+
+/**
  * 0-based ordinal of one occurrence across the whole list, counting in item
  * order — the same enumeration `countMatchesInTexts` totals, so the result
  * indexes into the count the find band displays.
+ *
+ * `occurrenceWithinItem` is observed in the RENDERED row, while the count is
+ * taken from the row's search text, and the two need not agree: a chat row
+ * renders its role as literal text above content that `itemSearchText` alone
+ * contributes, so the DOM can hold occurrences the total does not know about.
+ * Returns null rather than an ordinal the total cannot contain — reporting one
+ * would render "2 of 1".
  */
 export const occurrenceOrdinal = (
   lowerTextsByItem: string[][],
   lowerTerm: string,
   itemIndex: number,
   occurrenceWithinItem: number
-): number => {
-  if (lowerTerm.length === 0) return occurrenceWithinItem;
-  let before = 0;
-  const upTo = Math.min(itemIndex, lowerTextsByItem.length);
-  for (let i = 0; i < upTo; i++) {
-    for (const lowerText of lowerTextsByItem[i] ?? []) {
-      let pos = 0;
-      while ((pos = lowerText.indexOf(lowerTerm, pos)) !== -1) {
-        before++;
-        pos += lowerTerm.length;
-      }
-    }
+): number | null => {
+  const itemTexts = lowerTextsByItem[itemIndex];
+  if (itemTexts === undefined) return null;
+  if (occurrenceWithinItem >= countMatchesInTexts([itemTexts], lowerTerm)) {
+    return null;
   }
-  return before + occurrenceWithinItem;
+  return (
+    countMatchesInTexts(lowerTextsByItem.slice(0, itemIndex), lowerTerm) +
+    occurrenceWithinItem
+  );
 };
 
 /**
@@ -831,8 +880,12 @@ export function VirtualList<T>({
     ]
   );
 
-  const { registerVirtualList, registerMatchCounter, registerMatchLocator } =
-    useExtendedFind();
+  const {
+    registerVirtualList,
+    registerMatchCounter,
+    registerMatchLocator,
+    getFindSessionId,
+  } = useExtendedFind();
 
   // Pre-compute lowercased search text for every item once per data /
   // accessor change, so the FindBand counter doesn't re-extract and
@@ -853,13 +906,65 @@ export function VirtualList<T>({
   // and because it is written in a post-render effect while `onContentReady`
   // fires on a fixed timer, a press landing before the commit rescanned from
   // the same origin and returned the same item.
-  const findCursorRef = useRef<{ term: string; index: number } | null>(null);
+  const findCursorRef = useRef<FindCursor | null>(null);
+
+  // The term currently being searched. Recorded by the counter, which the
+  // find band calls on every keystroke — earlier than searchInData, which
+  // only runs once window.find has exhausted the rendered DOM.
+  const activeFindTermRef = useRef("");
+  // Direction of the walk in progress, so the listener below can tell a step
+  // forward from a step back.
+  const findDirectionRef = useRef<FindDirection>("forward");
+
+  // Keep the cursor in step with window.find's own walk through the rendered
+  // rows. searchInData cannot do this itself: findExtendedInDOM clears the
+  // selection before delegating, so by the time it runs there is nothing to
+  // read. Without this the cursor only advances on the presses that reach
+  // searchInData, so the next one resumes from a row the user already walked
+  // past in the DOM and find saws back and forth. (The transcript source
+  // solves the same problem the same way.)
+  useEffect(() => {
+    if (findScope === "none" || typeof document === "undefined") return;
+    const onSelectionChange = () => {
+      const term = activeFindTermRef.current;
+      if (!term) return;
+      const sel = document.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
+      // Cheap pre-filter: a find result is a single text node selected to
+      // exactly the term's length. Skips the expensive walk for ordinary
+      // user selections (Ctrl-A over a long list would be costly).
+      if (range.startContainer !== range.endContainer) return;
+      if (range.endOffset - range.startOffset !== term.length) return;
+      const at = itemOccurrenceAtSelection(rootRef.current, term.toLowerCase());
+      if (!at) return;
+      if (
+        !cursorAdvances(
+          findCursorRef.current,
+          term,
+          at.itemIndex,
+          findDirectionRef.current
+        )
+      ) {
+        return;
+      }
+      findCursorRef.current = {
+        term,
+        index: at.itemIndex,
+        session: getFindSessionId(),
+      };
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () =>
+      document.removeEventListener("selectionchange", onSelectionChange);
+  }, [findScope, getFindSessionId]);
 
   const searchInData = useCallback<ExtendedFindFn>(
     (term, direction, onContentReady) => {
       const len = precomputedSearchTexts.length;
       if (!term || len === 0) return Promise.resolve(false);
       const isForward = direction === "forward";
+      findDirectionRef.current = direction;
       const prepared = prepareSearchTerm(term);
       const variants = [
         prepared.simple,
@@ -867,9 +972,11 @@ export function VirtualList<T>({
         ...(prepared.jsonEscaped ? [prepared.jsonEscaped] : []),
       ];
 
+      const sessionId = getFindSessionId();
       const from = findScanOrigin(
         findCursorRef.current,
         term,
+        sessionId,
         len,
         isForward,
         visibleRangeRef.current
@@ -881,18 +988,19 @@ export function VirtualList<T>({
         isForward
       );
       if (i === null) return Promise.resolve(false);
-      findCursorRef.current = { term, index: i };
+      findCursorRef.current = { term, index: i, session: sessionId };
       // Starting a new settle cancels the previous landing while retaining
       // ownership of the auto-scroll guard until the find landing finishes.
       settleScrollToIndex(i, "center");
       setTimeout(onContentReady, 200);
       return Promise.resolve(true);
     },
-    [precomputedSearchTexts, settleScrollToIndex]
+    [precomputedSearchTexts, settleScrollToIndex, getFindSessionId]
   );
 
   const countMatchesInData = useCallback<ExtendedCountFn>(
     (term) => {
+      activeFindTermRef.current = term;
       if (!term || precomputedSearchTexts.length === 0) return 0;
       return countMatchesInTexts(precomputedSearchTexts, term.toLowerCase());
     },
@@ -908,9 +1016,10 @@ export function VirtualList<T>({
       if (!term) return null;
       const lowerTerm = term.toLowerCase();
       const at = itemOccurrenceAtSelection(rootRef.current, lowerTerm);
-      if (at === null || at.itemIndex >= precomputedSearchTexts.length) {
-        return null;
-      }
+      if (at === null) return null;
+      // Declines (null) when the rendered row holds an occurrence the search
+      // text does not account for; the find band then falls back to counting
+      // presses for that hit rather than showing an impossible ordinal.
       return occurrenceOrdinal(
         precomputedSearchTexts,
         lowerTerm,
