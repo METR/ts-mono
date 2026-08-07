@@ -29,6 +29,11 @@ const FORBIDDEN_TAGS = [
   "select",
   "set",
   "source",
+  // In DOMPurify's html profile by default, so it needs forbidding outright.
+  // MathJax's stylesheet ships as static app CSS (mathjaxStyles.css) instead:
+  // any rule for admitting a <style> from untrusted content is forgeable, and
+  // a surviving one is unscoped global CSS.
+  "style",
   "textarea",
   "track",
   "video",
@@ -40,7 +45,6 @@ const MATHJAX_TAGS = [
   "mjx-status",
   "mjx-tip",
   "mjx-tool",
-  "style",
 ];
 
 const MATHJAX_ATTRS = [
@@ -101,6 +105,9 @@ const SAFE_STYLE_PROPERTIES = new Set([
   "width",
 ]);
 
+// Only style attributes reach this, and sanitizeStyleAttribute round-trips
+// them through the CSSOM first, which normalizes escapes like `u\rl(` that a
+// raw-text check alone would miss.
 const UNSAFE_CSS_PATTERN =
   /@import|behavior\s*:|binding\s*:|expression\s*\(|javascript\s*:|vbscript\s*:|url\s*\(/i;
 
@@ -170,16 +177,6 @@ const installHooks = (purify: DOMPurifyInstance): void => {
     return;
   }
   hooksInstalled = true;
-
-  purify.addHook("uponSanitizeElement", (node, hookEvent) => {
-    if (
-      hookEvent.tagName === "style" &&
-      node instanceof Element &&
-      !isAllowedMathJaxStyleElement(node)
-    ) {
-      node.remove();
-    }
-  });
 
   purify.addHook("uponSanitizeAttribute", (node, hookEvent) => {
     if (hookEvent.attrName === "style") {
@@ -311,17 +308,4 @@ const sanitizeStyleAttribute = (style: string): string => {
   }
 
   return safeDeclarations.join(" ");
-};
-
-const isAllowedMathJaxStyleElement = (element: Element): boolean => {
-  const parent = element.parentElement;
-  const parentId = parent?.getAttribute("id") || "";
-  const css = element.textContent || "";
-
-  return (
-    parent?.tagName.toLowerCase() === "span" &&
-    /^mjx-[a-f0-9]+$/i.test(parentId) &&
-    css.includes(`#${parentId}`) &&
-    !UNSAFE_CSS_PATTERN.test(css)
-  );
 };
