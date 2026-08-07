@@ -6,8 +6,12 @@ import createDOMPurify, {
 
 import { canonicalImageSource } from "@tsmono/util";
 
+// Everything here either fetches a subresource or animates one in. feimage is
+// unreachable while USE_PROFILES omits DOMPurify's svgFilters profile; it is
+// listed so enabling that profile cannot silently open a fetch vector.
 const FORBIDDEN_TAGS = [
   "animate",
+  "animatecolor",
   "animatemotion",
   "animatetransform",
   "audio",
@@ -15,6 +19,7 @@ const FORBIDDEN_TAGS = [
   "button",
   "discard",
   "embed",
+  "feimage",
   "foreignobject",
   "form",
   "iframe",
@@ -22,6 +27,7 @@ const FORBIDDEN_TAGS = [
   "input",
   "link",
   "meta",
+  "mglyph",
   "mpath",
   "object",
   "picture",
@@ -59,10 +65,8 @@ const MATHJAX_ATTRS = [
 
 const URL_ATTRIBUTES = new Set([
   "action",
-  "background",
   "formaction",
   "href",
-  "poster",
   "src",
   "xlink:href",
 ]);
@@ -120,7 +124,11 @@ const PURIFY_CONFIG: Config = {
   ADD_TAGS: MATHJAX_TAGS,
   ALLOW_DATA_ATTR: true,
   ALLOW_UNKNOWN_PROTOCOLS: false,
-  FORBID_ATTR: ["srcdoc", "srcset"],
+  // background fetches on every table element per HTML §15.3.3, and no
+  // protocol check helps: the dangerous value is an ordinary https URL. Moving
+  // these to URL_ATTRIBUTES would un-check them, since isSafeUrlAttribute
+  // allows by default.
+  FORBID_ATTR: ["background", "poster", "srcdoc", "srcset"],
   FORBID_TAGS: FORBIDDEN_TAGS,
   USE_PROFILES: { html: true, mathMl: true, svg: true },
 };
@@ -184,8 +192,13 @@ const installHooks = (purify: DOMPurifyInstance): void => {
       return;
     }
 
-    if (hookEvent.attrName === "src" && isImgElement(node)) {
-      const canonical = safeImgSrc(hookEvent.attrValue);
+    if (hookEvent.attrName === "src") {
+      // img keeps a src only when safeImgSrc canonicalizes it to inline data;
+      // no other surviving element needs one. A protocol check would not help:
+      // the dangerous value is an ordinary https URL.
+      const canonical = isImgElement(node)
+        ? safeImgSrc(hookEvent.attrValue)
+        : undefined;
       if (canonical === undefined) {
         hookEvent.keepAttr = false;
         node.removeAttribute(hookEvent.attrName);

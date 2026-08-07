@@ -233,4 +233,63 @@ describe("MarkdownDiv rendered HTML sanitization", () => {
     expect(container.querySelector("style")).toBeNull();
     expect(container.querySelector("a[href]")).toBeNull();
   });
+
+  it("removes the background attribute", async () => {
+    const { container } = render(
+      <MarkdownDiv
+        markdown="text"
+        postProcess={(html) =>
+          `${html}<table><td background="https://evil.example/x.png"></td></table>`
+        }
+      />
+    );
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("text");
+    });
+
+    expect(container.querySelector("[background]")).toBeNull();
+    expect(container.innerHTML).not.toContain("evil.example");
+  });
+
+  // Each element needs its real parent namespace: mglyph is MathML, and inside
+  // <svg> it is dropped as unknown, which would pass for the wrong reason.
+  it.each([
+    ["mglyph", "math"],
+    ["feimage", "svg"],
+    ["animatecolor", "svg"],
+  ])("removes the %s element", async (tag, parent) => {
+    const { container } = render(
+      <MarkdownDiv
+        markdown="text"
+        postProcess={(html) =>
+          `${html}<${parent}><${tag} src="https://evil.example/x.png" href="https://evil.example/y.png"></${tag}></${parent}>`
+        }
+      />
+    );
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("text");
+    });
+
+    expect(container.querySelector(tag)).toBeNull();
+    expect(container.innerHTML).not.toContain("evil.example");
+  });
+
+  it("removes a src attribute from a non-img element", async () => {
+    const { container } = render(
+      <MarkdownDiv
+        markdown="text"
+        postProcess={(html) =>
+          `${html}<math><mtext src="https://evil.example/x.png">m</mtext></math>`
+        }
+      />
+    );
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("text");
+    });
+
+    expect(container.querySelector("[src]")).toBeNull();
+  });
 });
