@@ -33,9 +33,10 @@ export const RetryChip: FC<RetryChipProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(
-    null
-  );
+  const [position, setPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
 
   // The chip lives inside the event panel header's title cell, which clips
   // its overflow (single-line ellipsis truncation) — so the menu is rendered
