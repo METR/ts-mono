@@ -5,6 +5,7 @@
  * transcript panel. They serve as a baseline before extracting
  * transcript components into the shared inspect-components package.
  */
+import type { Locator } from "@playwright/test";
 import { http, HttpResponse } from "msw";
 
 import type {
@@ -532,18 +533,29 @@ test.describe("outline collapse", () => {
 // Characterization: long unbroken text wrapping
 // ---------------------------------------------------------------------------
 
+function makeWrapTestBlob(): string {
+  return Array.from(
+    { length: 250_000 },
+    (_, i) =>
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i % 64]
+  ).join("");
+}
+
+async function countLineBoxes(locator: Locator): Promise<number> {
+  return locator.evaluate((el) => {
+    if (!el.firstChild) return -1;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getClientRects().length;
+  });
+}
+
 test.describe("markdown text wrapping", () => {
   test("wraps long unbroken text instead of forming one giant line box", async ({
     page,
     network,
   }) => {
-    const blob = Array.from(
-      { length: 250_000 },
-      (_, i) =>
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[
-          i % 64
-        ]
-    ).join("");
+    const blob = makeWrapTestBlob();
 
     await openTranscript(page, network, [
       {
@@ -556,7 +568,7 @@ test.describe("markdown text wrapping", () => {
         pending: null,
         uuid: "info-wrap-test",
         metadata: null,
-      } as unknown as Events[number],
+      },
     ]);
 
     // Markdown rendering is async (queued in MarkdownDiv); wait for the
@@ -567,13 +579,38 @@ test.describe("markdown text wrapping", () => {
       .filter({ hasText: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" });
     await blobParagraph.waitFor();
 
-    const lineBoxes = await blobParagraph.evaluate((p) => {
-      if (!p.firstChild) return -1;
-      const range = document.createRange();
-      range.selectNodeContents(p);
-      return range.getClientRects().length;
-    });
+    expect(await countLineBoxes(blobParagraph)).toBeGreaterThan(100);
+  });
 
-    expect(lineBoxes).toBeGreaterThan(100);
+  test("wraps long unbroken text in raw display mode too", async ({
+    page,
+    network,
+  }) => {
+    const blob = makeWrapTestBlob();
+
+    await openTranscript(page, network, [
+      {
+        event: "info",
+        source: "wrap-test",
+        data: blob,
+        span_id: null,
+        timestamp: "2025-01-15T09:59:00Z",
+        working_start: 0,
+        pending: null,
+        uuid: "info-wrap-test",
+        metadata: null,
+      },
+    ]);
+
+    // Switch to raw display mode, which renders info-event text via
+    // <Preformatted> instead of markdown.
+    await page.getByRole("button", { name: "Raw" }).click();
+
+    const blobPre = page
+      .locator("pre")
+      .filter({ hasText: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" });
+    await blobPre.waitFor();
+
+    expect(await countLineBoxes(blobPre)).toBeGreaterThan(100);
   });
 });
