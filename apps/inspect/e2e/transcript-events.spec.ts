@@ -534,11 +534,25 @@ test.describe("outline collapse", () => {
 // ---------------------------------------------------------------------------
 
 function makeWrapTestBlob(): string {
-  return Array.from(
-    { length: 250_000 },
-    (_, i) =>
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[i % 64]
+  return Array.from({ length: 250_000 }, (_, i) =>
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(
+      i % 64
+    )
   ).join("");
+}
+
+function createWrapTestInfoEvent(data: string): Events[number] {
+  return {
+    event: "info",
+    source: "wrap-test",
+    data,
+    span_id: null,
+    timestamp: "2025-01-15T09:59:00Z",
+    working_start: 0,
+    pending: null,
+    uuid: "info-wrap-test",
+    metadata: null,
+  };
 }
 
 async function countLineBoxes(locator: Locator): Promise<number> {
@@ -550,26 +564,14 @@ async function countLineBoxes(locator: Locator): Promise<number> {
   });
 }
 
-test.describe("markdown text wrapping", () => {
+test.describe("long unbroken text wrapping", () => {
   test("wraps long unbroken text instead of forming one giant line box", async ({
     page,
     network,
   }) => {
     const blob = makeWrapTestBlob();
 
-    await openTranscript(page, network, [
-      {
-        event: "info",
-        source: "wrap-test",
-        data: blob,
-        span_id: null,
-        timestamp: "2025-01-15T09:59:00Z",
-        working_start: 0,
-        pending: null,
-        uuid: "info-wrap-test",
-        metadata: null,
-      },
-    ]);
+    await openTranscript(page, network, [createWrapTestInfoEvent(blob)]);
 
     // Markdown rendering is async (queued in MarkdownDiv); wait for the
     // blob's paragraph specifically, since the sample's chat messages also
@@ -588,22 +590,9 @@ test.describe("markdown text wrapping", () => {
   }) => {
     const blob = makeWrapTestBlob();
 
-    await openTranscript(page, network, [
-      {
-        event: "info",
-        source: "wrap-test",
-        data: blob,
-        span_id: null,
-        timestamp: "2025-01-15T09:59:00Z",
-        working_start: 0,
-        pending: null,
-        uuid: "info-wrap-test",
-        metadata: null,
-      },
-    ]);
+    await openTranscript(page, network, [createWrapTestInfoEvent(blob)]);
 
-    // Switch to raw display mode, which renders info-event text via
-    // <Preformatted> instead of markdown.
+    // Raw mode renders info-event text via <Preformatted>, not markdown.
     await page.getByRole("button", { name: "Raw" }).click();
 
     const blobPre = page

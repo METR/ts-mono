@@ -7,9 +7,8 @@
    white-space rules, which override this inherited value. */
 .markdown-content {
   white-space: normal;
-  /* Base64 and other unbroken runs otherwise form a single multi-million-px
-     line box: 41ms/resize in Safari at the 250k cap, against 0.9ms in Chrome.
-     `anywhere` rather than `break-word` to match base.css and ToolOutput. */
+  /* `anywhere`, not `break-word`: it lowers min-content so flex/grid ancestors
+     shrink instead of overflowing on unbroken runs like base64. */
   overflow-wrap: anywhere;
 }
 
