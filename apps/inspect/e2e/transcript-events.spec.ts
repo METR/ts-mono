@@ -527,3 +527,53 @@ test.describe("outline collapse", () => {
     await expect(turnsRow).toBeVisible();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Characterization: long unbroken text wrapping
+// ---------------------------------------------------------------------------
+
+test.describe("markdown text wrapping", () => {
+  test("wraps long unbroken text instead of forming one giant line box", async ({
+    page,
+    network,
+  }) => {
+    const blob = Array.from(
+      { length: 250_000 },
+      (_, i) =>
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"[
+          i % 64
+        ]
+    ).join("");
+
+    await openTranscript(page, network, [
+      {
+        event: "info",
+        source: "wrap-test",
+        data: blob,
+        span_id: null,
+        timestamp: "2025-01-15T09:59:00Z",
+        working_start: 0,
+        pending: null,
+        uuid: "info-wrap-test",
+        metadata: null,
+      } as unknown as Events[number],
+    ]);
+
+    // Markdown rendering is async (queued in MarkdownDiv); wait for the
+    // blob's paragraph specifically, since the sample's chat messages also
+    // render as `.markdown-content p` elements.
+    const blobParagraph = page
+      .locator(".markdown-content p")
+      .filter({ hasText: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" });
+    await blobParagraph.waitFor();
+
+    const lineBoxes = await blobParagraph.evaluate((p) => {
+      if (!p.firstChild) return -1;
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      return range.getClientRects().length;
+    });
+
+    expect(lineBoxes).toBeGreaterThan(100);
+  });
+});
