@@ -944,6 +944,7 @@ export interface components {
             } | null;
             /** Turn */
             turn: number;
+            usage?: components["schemas"]["CheckpointUsage"] | null;
             /** Uuid */
             uuid?: string | null;
             /** Working Start */
@@ -967,12 +968,51 @@ export interface components {
         CheckpointSampleConfig: {
             /** Max Consecutive Failures */
             max_consecutive_failures?: number | null;
+            /** Restore Usage */
+            restore_usage?: boolean | null;
             /** Sandbox Paths */
             sandbox_paths?: {
                 [key: string]: string[];
             } | null;
             /** Trigger */
             trigger?: components["schemas"]["Manual"] | components["schemas"]["TurnInterval"] | components["schemas"]["TimeInterval"] | components["schemas"]["TokenInterval"] | components["schemas"]["CostInterval"] | components["schemas"]["BudgetPercent"] | null;
+        };
+        /**
+         * CheckpointUsage
+         * @description Sample usage as of this checkpoint, for continuation on resume.
+         */
+        CheckpointUsage: {
+            /**
+             * Cost
+             * @default 0
+             */
+            cost: number;
+            /** Model Usage */
+            model_usage: {
+                [key: string]: components["schemas"]["ModelUsage"];
+            };
+            /** Role Usage */
+            role_usage: {
+                [key: string]: components["schemas"]["ModelUsage"];
+            };
+            /**
+             * Time
+             * @default 0
+             */
+            time: number;
+            token_limit_usage: components["schemas"]["ModelUsage"];
+            /**
+             * Turns
+             * @default 0
+             */
+            turns: number;
+            /**
+             * Working Time
+             * @default 0
+             */
+            working_time: number;
+        } & {
+            [key: string]: unknown;
         };
         /** Citation */
         Citation: components["schemas"]["ContentCitation"] | components["schemas"]["DocumentCitation"] | components["schemas"]["UrlCitation"];
