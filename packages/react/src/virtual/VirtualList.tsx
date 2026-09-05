@@ -239,8 +239,8 @@ export const itemOccurrenceAtSelection = (
   if (!root.contains(range.startContainer)) return null;
 
   let el: Element | null =
-    range.startContainer.nodeType === Node.ELEMENT_NODE
-      ? (range.startContainer as Element)
+    range.startContainer instanceof Element
+      ? range.startContainer
       : range.startContainer.parentElement;
   while (el && el !== root && !el.hasAttribute("data-item-index")) {
     el = el.parentElement;
@@ -253,7 +253,8 @@ export const itemOccurrenceAtSelection = (
   let occurrence = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const textNode = node as Text;
+    if (!(node instanceof Text)) continue;
+    const textNode = node;
     const atSelection = textNode === range.startContainer;
     const hay = (
       atSelection ? textNode.data.slice(0, range.startOffset) : textNode.data
@@ -1090,6 +1091,7 @@ export function VirtualList<T>({
   // searchInData, so the next one resumes from a row the user already walked
   // past in the DOM and find saws back and forth. (The transcript source
   // solves the same problem the same way.)
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- conditional document listener; registration depends on findContext
   useEffect(() => {
     if (!findContext || typeof document === "undefined") return;
     const onSelectionChange = () => {
@@ -1103,7 +1105,10 @@ export function VirtualList<T>({
       // user selections (Ctrl-A over a long list would be costly).
       if (range.startContainer !== range.endContainer) return;
       if (range.endOffset - range.startOffset !== term.length) return;
-      const at = itemOccurrenceAtSelection(wrapperRef.current, term.toLowerCase());
+      const at = itemOccurrenceAtSelection(
+        wrapperRef.current,
+        term.toLowerCase()
+      );
       if (!at) return;
       if (
         !cursorAdvances(
