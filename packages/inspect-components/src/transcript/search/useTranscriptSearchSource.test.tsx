@@ -29,6 +29,13 @@ import { useTranscriptSearchSource } from "./useTranscriptSearchSource";
 // Fixtures
 // =============================================================================
 
+/** First child of `parent`, which the fixtures always build as a text node. */
+const textNodeOf = (parent: Node): Text => {
+  const node = parent.firstChild;
+  if (!(node instanceof Text)) throw new Error("expected a text node");
+  return node;
+};
+
 const ev = (uuid: string, output: string): ModelEvent =>
   testModelEvent({
     uuid,
@@ -180,8 +187,9 @@ function renderHarness(opts: HarnessOptions): Harness {
 function selectTermIn(panelId: string, term: string): void {
   const panel = document.getElementById(panelId);
   if (!panel) throw new Error(`no panel ${panelId}`);
-  const textNode = panel.firstChild as Text | null;
-  if (!textNode) throw new Error(`panel ${panelId} has no text`);
+  const textNode = panel.firstChild;
+  if (!(textNode instanceof Text))
+    throw new Error(`panel ${panelId} has no text`);
   const idx = textNode.data.toLowerCase().indexOf(term.toLowerCase());
   if (idx === -1) throw new Error(`"${term}" not in panel ${panelId}`);
   const range = document.createRange();
@@ -349,7 +357,7 @@ describe("useTranscriptSearchSource", () => {
     expect(h.countAll('"role"')).toBe(2);
 
     // Select the quoted occurrence, which starts at index 9.
-    const textNode = document.getElementById("e1")!.firstChild as Text;
+    const textNode = textNodeOf(document.getElementById("e1")!);
     const range = document.createRange();
     range.setStart(textNode, 9);
     range.setEnd(textNode, 15);
@@ -603,7 +611,7 @@ describe("useTranscriptSearchSource", () => {
     // matchAtSelection overshoots and returns null, but the selection is
     // still inside e4.
     const panel = document.getElementById("e4")!;
-    const textNode = panel.firstChild as Text;
+    const textNode = textNodeOf(panel);
     const secondIdx = textNode.data.toLowerCase().lastIndexOf("wondering");
     const range = document.createRange();
     range.setStart(textNode, secondIdx);
