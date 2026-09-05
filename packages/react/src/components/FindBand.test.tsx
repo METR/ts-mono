@@ -39,6 +39,7 @@ const MatchCounter: FC<{ count: number }> = ({ count }) => {
 const MatchLocator: FC<{ index: number | null }> = ({ index }) => {
   const { registerMatchLocator } = useExtendedFind();
 
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- context register/unregister subscription; no named hook wraps that pair
   useEffect(
     () => registerMatchLocator("find-band-test", () => index),
     [index, registerMatchLocator]
