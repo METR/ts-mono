@@ -880,18 +880,26 @@ describe("eventSearchText", () => {
 });
 
 describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
+  /**
+   * These fixtures carry only the fields the SUMMARY panel reads, not a whole
+   * schema-valid message or completion, so they are asserted into place the
+   * same way `outOfContractResult` handles tool results above.
+   */
   const modelEventNode = (
     input: Record<string, unknown>[],
     output: Record<string, unknown> = { choices: [] }
   ) =>
-    makeNode({
-      event: "model",
-      model: "test/model",
-      role: null,
-      input,
-      output,
-      timestamp: "2024-01-01T00:00:00Z",
-    });
+    makeNode(
+      testModelEvent({
+        model: "test/model",
+        role: null,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- see above
+        input: input as unknown as ModelEvent["input"],
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- see above
+        output: output as unknown as ModelEvent["output"],
+        timestamp: "2024-01-01T00:00:00Z",
+      })
+    );
 
   it.each([
     {

@@ -259,6 +259,7 @@ export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
   // it into the mount effect above ties it to that effect's other
   // dependencies, and a re-run would bump the session mid-search and discard
   // the cursor on every press.
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- isolated on purpose so it re-runs only on beginFindSession; see above
   useEffect(() => {
     beginFindSession();
   }, [beginFindSession]);
