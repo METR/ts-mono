@@ -20,6 +20,7 @@ interface SourceSpec {
 const Source: FC<SourceSpec> = ({ id, count, locator, bump }) => {
   const { registerMatchCounter, registerMatchLocator } = useExtendedFind();
 
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- context register/unregister subscription; no named hook wraps that pair
   useEffect(() => {
     if (count === undefined) return;
     return registerMatchCounter(id, () => count);
@@ -27,6 +28,7 @@ const Source: FC<SourceSpec> = ({ id, count, locator, bump }) => {
     // cycle a component with an unstable countFn performs on every render.
   }, [id, count, bump, registerMatchCounter]);
 
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- context register/unregister subscription; no named hook wraps that pair
   useEffect(() => {
     if (!locator) return;
     return registerMatchLocator(id, locator);
@@ -49,6 +51,7 @@ function renderSources(sources: SourceSpec[]): SourcesHarness {
   let ordinalAtSelection: ((term: string) => number | null) | null = null;
   const Probe: FC = () => {
     const { ordinalAtSelection: fn } = useExtendedFind();
+    // eslint-disable-next-line tsmono/no-raw-use-effect -- test probe: captures the context value after every render
     useEffect(() => {
       ordinalAtSelection = fn;
     });
@@ -63,6 +66,7 @@ function renderSources(sources: SourceSpec[]): SourcesHarness {
     </ExtendedFindProvider>
   );
   const view = render(tree(sources));
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned by the probe's effect during render(), which TS's control flow does not model
   if (!ordinalAtSelection) throw new Error("probe did not render");
   return {
     ordinal: (term: string) => ordinalAtSelection!(term),

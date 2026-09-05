@@ -650,6 +650,13 @@ describe("occurrenceOrdinal", () => {
 });
 
 describe("itemOccurrenceAtSelection", () => {
+  /** First child of `parent`, which the fixtures always build as a text node. */
+  const textNodeOf = (parent: Node): Text => {
+    const node = parent.firstChild;
+    if (!(node instanceof Text)) throw new Error("expected a text node");
+    return node;
+  };
+
   const selectIn = (node: Text, start: number, length: number) => {
     const range = document.createRange();
     range.setStart(node, start);
@@ -676,7 +683,7 @@ describe("itemOccurrenceAtSelection", () => {
   it("reports the row index and the occurrence within it", () => {
     const root = build();
     const span = root.querySelectorAll("span")[1]!;
-    const text = span.firstChild as Text;
+    const text = textNodeOf(span);
     // Select the SECOND "cancel" in the row (offset 11).
     selectIn(text, 11, 6);
 
@@ -688,7 +695,7 @@ describe("itemOccurrenceAtSelection", () => {
 
   it("reports occurrence 0 for the first match in a row", () => {
     const root = build();
-    const text = root.querySelectorAll("span")[1]!.firstChild as Text;
+    const text = textNodeOf(root.querySelectorAll("span")[1]!);
     selectIn(text, 2, 6);
 
     expect(itemOccurrenceAtSelection(root, "cancel")).toEqual({
@@ -704,7 +711,7 @@ describe("itemOccurrenceAtSelection", () => {
     const theirs = document.createElement("div");
     theirs.innerHTML = '<div data-item-index="0"><span>cancel</span></div>';
     document.body.appendChild(theirs);
-    const text = theirs.querySelector("span")!.firstChild as Text;
+    const text = textNodeOf(theirs.querySelector("span")!);
     selectIn(text, 0, 6);
 
     expect(itemOccurrenceAtSelection(theirs, "cancel")).not.toBeNull();
@@ -718,7 +725,7 @@ describe("itemOccurrenceAtSelection", () => {
     const stray = document.createElement("div");
     stray.textContent = "cancel";
     root.appendChild(stray);
-    selectIn(stray.firstChild as Text, 0, 6);
+    selectIn(textNodeOf(stray), 0, 6);
     expect(itemOccurrenceAtSelection(root, "cancel")).toBeNull();
   });
 });

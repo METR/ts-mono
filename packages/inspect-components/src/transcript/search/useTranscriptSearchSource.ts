@@ -459,10 +459,7 @@ function closestEventAncestor(
   node: Node,
   isMatch: (id: string) => boolean
 ): Element | null {
-  let el: Element | null =
-    node.nodeType === Node.ELEMENT_NODE
-      ? (node as Element)
-      : node.parentElement;
+  let el: Element | null = node instanceof Element ? node : node.parentElement;
   while (el && !isMatch(el.id)) el = el.parentElement;
   return el;
 }
@@ -524,7 +521,8 @@ function matchAtSelection(
   let occurrenceInEvent = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const textNode = node as Text;
+    if (!(node instanceof Text)) continue;
+    const textNode = node;
     const atSelection = textNode === range.startContainer;
     const text = (
       atSelection ? textNode.data.slice(0, range.startOffset) : textNode.data
