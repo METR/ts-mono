@@ -5,7 +5,12 @@ import {
 } from "@tanstack/react-table";
 import { GridState } from "ag-grid-community";
 import { createContext, useContext } from "react";
-import { create } from "zustand";
+import {
+  create,
+  type Mutate,
+  type UseBoundStore,
+  type StoreApi as ZustandStoreApi,
+} from "zustand";
 import { createJSONStorage, devtools, persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 
@@ -292,7 +297,7 @@ const createDebouncedPersistStorage = (
   };
 };
 
-export const createStore = (api: ScoutApiV2) =>
+export const createStore = (api: ScoutApiV2): StoreApi =>
   create<StoreState>()(
     devtools(
       persist(
@@ -826,7 +831,17 @@ export const createStore = (api: ScoutApiV2) =>
     )
   );
 
-type StoreApi = ReturnType<typeof createStore>;
+// An inferred store type leaks private Immer types during declaration emit.
+type StoreApi = UseBoundStore<
+  Mutate<
+    ZustandStoreApi<StoreState>,
+    [
+      ["zustand/devtools", never],
+      ["zustand/persist", unknown],
+      ["zustand/immer", never],
+    ]
+  >
+>;
 
 const StoreContext = createContext<StoreApi | null>(null);
 const ApiContext = createContext<ScoutApiV2 | null>(null);
