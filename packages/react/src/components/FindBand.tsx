@@ -10,6 +10,7 @@ import {
 import { deepActiveElement, isEditableTarget } from "@tsmono/util";
 
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
+import { useMountEffect } from "../hooks/useMountEffect";
 
 import { useExtendedFind } from "./ExtendedFindContext";
 import { findScrollableParent, scrollRangeToCenter } from "./findBandDom";
@@ -259,10 +260,7 @@ export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
   // it into the mount effect above ties it to that effect's other
   // dependencies, and a re-run would bump the session mid-search and discard
   // the cursor on every press.
-  // eslint-disable-next-line tsmono/no-raw-use-effect -- isolated on purpose so it re-runs only on beginFindSession; see above
-  useEffect(() => {
-    beginFindSession();
-  }, [beginFindSession]);
+  useMountEffect(beginFindSession);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {

@@ -21,6 +21,7 @@ import {
 import { prepareSearchTerm } from "../components/prepareSearchTerm";
 import { PulsingDots } from "../components/PulsingDots";
 import { SCROLL_RELEASE_KEYS as SCROLL_KEYS } from "../hooks/useChromeNavOwnership";
+import { useEventListener } from "../hooks/useEventListener";
 import { usePreviousValue } from "../hooks/usePreviousValue";
 import { useProperty } from "../hooks/useProperty";
 import { useRafThrottle } from "../hooks/useRafThrottle";
@@ -1091,10 +1092,11 @@ export function VirtualList<T>({
   // searchInData, so the next one resumes from a row the user already walked
   // past in the DOM and find saws back and forth. (The transcript source
   // solves the same problem the same way.)
-  // eslint-disable-next-line tsmono/no-raw-use-effect -- conditional document listener; registration depends on findContext
-  useEffect(() => {
-    if (!findContext || typeof document === "undefined") return;
-    const onSelectionChange = () => {
+  useEventListener(
+    findContext && typeof document !== "undefined" ? document : null,
+    "selectionchange",
+    () => {
+      if (!findContext) return;
       const term = activeFindTermRef.current;
       if (!term) return;
       const sel = document.getSelection();
@@ -1125,11 +1127,8 @@ export function VirtualList<T>({
         index: at.itemIndex,
         session: findContext.getFindSessionId(),
       };
-    };
-    document.addEventListener("selectionchange", onSelectionChange);
-    return () =>
-      document.removeEventListener("selectionchange", onSelectionChange);
-  }, [findContext]);
+    }
+  );
 
   const searchInData = useCallback<ExtendedFindFn>(
     (term, direction, onContentReady) => {

@@ -9,6 +9,8 @@ import {
 import { FC, ReactNode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useLatestRef } from "../hooks/useLatestRef";
+import { useMountEffect } from "../hooks/useMountEffect";
 import { testIcons } from "../test/test-icons";
 
 import { ComponentIconProvider } from "./ComponentIconContext";
@@ -38,11 +40,10 @@ const MatchCounter: FC<{ count: number }> = ({ count }) => {
 
 const MatchLocator: FC<{ index: number | null }> = ({ index }) => {
   const { registerMatchLocator } = useExtendedFind();
+  const indexRef = useLatestRef(index);
 
-  // eslint-disable-next-line tsmono/no-raw-use-effect -- context register/unregister subscription; no named hook wraps that pair
-  useEffect(
-    () => registerMatchLocator("find-band-test", () => index),
-    [index, registerMatchLocator]
+  useMountEffect(() =>
+    registerMatchLocator("find-band-test", () => indexRef.current)
   );
 
   return null;

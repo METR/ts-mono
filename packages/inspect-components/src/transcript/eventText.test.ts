@@ -26,8 +26,11 @@ import {
   testStepEvent,
   testStoreEvent,
   testSubtaskEvent,
+  testSystemMessage,
   testToolCall,
   testToolEvent,
+  testToolMessage,
+  testUserMessage,
 } from "@tsmono/inspect-common/testing";
 import type {
   CompactionEvent,
@@ -967,23 +970,16 @@ describe("eventSearchText", () => {
 });
 
 describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
-  /**
-   * These fixtures carry only the fields the SUMMARY panel reads, not a whole
-   * schema-valid message or completion, so they are asserted into place the
-   * same way `outOfContractResult` handles tool results above.
-   */
   const modelEventNode = (
-    input: Record<string, unknown>[],
-    output: Record<string, unknown> = { choices: [] }
+    input: ModelEvent["input"],
+    output: ModelEvent["output"] = testModelOutput()
   ) =>
     makeNode(
       testModelEvent({
         model: "test/model",
         role: null,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- see above
-        input: input as unknown as ModelEvent["input"],
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- see above
-        output: output as unknown as ModelEvent["output"],
+        input,
+        output,
         timestamp: "2024-01-01T00:00:00Z",
       })
     );
@@ -992,11 +988,11 @@ describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
     {
       desc: "skips input messages the panel does not draw",
       input: [
-        { role: "system", content: "HEAD_OF_HISTORY" },
-        { role: "user", content: "OLD_TURN" },
-        { role: "assistant", content: "old answer" },
-        { role: "tool", content: "tool result" },
-        { role: "user", content: "CURRENT_TURN" },
+        testSystemMessage({ content: "HEAD_OF_HISTORY" }),
+        testUserMessage({ content: "OLD_TURN" }),
+        testAssistantMessage({ content: "old answer" }),
+        testToolMessage({ content: "tool result" }),
+        testUserMessage({ content: "CURRENT_TURN" }),
       ],
       indexed: ["CURRENT_TURN"],
       skipped: ["HEAD_OF_HISTORY", "OLD_TURN"],
@@ -1005,8 +1001,8 @@ describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
       // [system, user] is entirely a trailing run, so nothing is hidden
       desc: "indexes a first model call's input in full",
       input: [
-        { role: "system", content: "TASK_PROMPT" },
-        { role: "user", content: "TASK_QUESTION" },
+        testSystemMessage({ content: "TASK_PROMPT" }),
+        testUserMessage({ content: "TASK_QUESTION" }),
       ],
       indexed: ["TASK_PROMPT", "TASK_QUESTION"],
       skipped: [],
@@ -1014,8 +1010,8 @@ describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
     {
       desc: "indexes a trailing assistant compaction message, and only that",
       input: [
-        { role: "user", content: "OLD_TURN" },
-        { role: "assistant", content: "COMPACTION_SUMMARY" },
+        testUserMessage({ content: "OLD_TURN" }),
+        testAssistantMessage({ content: "COMPACTION_SUMMARY" }),
       ],
       indexed: ["COMPACTION_SUMMARY"],
       skipped: ["OLD_TURN"],
@@ -1023,8 +1019,8 @@ describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
     {
       desc: "stops at a trailing tool message, which the panel omits by default",
       input: [
-        { role: "user", content: "PROMPT" },
-        { role: "tool", content: "TOOL_RESULT" },
+        testUserMessage({ content: "PROMPT" }),
+        testToolMessage({ content: "TOOL_RESULT" }),
       ],
       indexed: [],
       skipped: ["TOOL_RESULT", "PROMPT"],
@@ -1041,23 +1037,25 @@ describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
 
   it("skips assistant tool_calls, which the following tool event draws", () => {
     const texts = eventSearchText(
-      modelEventNode([{ role: "user", content: "prompt" }], {
-        choices: [
-          {
-            message: {
-              role: "assistant",
-              content: "",
-              tool_calls: [
-                {
-                  id: "call-1",
-                  function: "CANCEL_SCORE",
-                  arguments: { job_id: "JOB_ID_BLOB" },
-                },
-              ],
-            },
-          },
-        ],
-      })
+      modelEventNode(
+        [testUserMessage({ content: "prompt" })],
+        testModelOutput({
+          choices: [
+            testChatCompletionChoice({
+              message: testAssistantMessage({
+                content: "",
+                tool_calls: [
+                  testToolCall({
+                    id: "call-1",
+                    function: "CANCEL_SCORE",
+                    arguments: { job_id: "JOB_ID_BLOB" },
+                  }),
+                ],
+              }),
+            }),
+          ],
+        })
+      )
     );
     expect(texts).not.toContain("CANCEL_SCORE");
     expect(texts.join("\n")).not.toContain("JOB_ID_BLOB");
