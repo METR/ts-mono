@@ -581,6 +581,8 @@ export interface components {
             inspect_version: string;
             /** Scout Version */
             scout_version?: string | null;
+            /** Trust Content */
+            trust_content?: boolean | null;
         };
         /**
          * ApprovalEvent
@@ -4189,7 +4191,8 @@ export interface components {
          * @description Top-level viewer configuration.
          *
          *     This allows per task customization of the
-         *     Task's sample list and each sample's score and scanner result display.
+         *     Task's sample list, each sample's score and scanner result display,
+         *     and whether log content is trusted enough to render richly.
          */
         ViewerConfig: {
             sample_score_view?: components["schemas"]["SampleScoreView"] | null;
@@ -4199,6 +4202,8 @@ export interface components {
             };
             /** Task Samples View */
             task_samples_view?: components["schemas"]["TaskSamplesView"] | components["schemas"]["TaskSamplesView"][] | null;
+            /** Trust Content */
+            trust_content?: boolean | null;
         };
     };
     responses: never;
