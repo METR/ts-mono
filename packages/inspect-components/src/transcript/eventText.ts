@@ -82,11 +82,9 @@ export const extractEventFields = (event: EventType): [string, string][] => {
       // Assistant `tool_calls` stay unindexed: the following tool event draws
       // them and indexes `function`/`arguments` itself, and ModelEventView
       // drops them entirely when `showToolCalls` is false.
-      if (modelEvent.output?.choices) {
-        for (const choice of modelEvent.output.choices) {
-          for (const text of extractContentText(choice.message.content)) {
-            fields.push(["output", text]);
-          }
+      for (const choice of modelEvent.output.choices) {
+        for (const text of extractContentText(choice.message.content)) {
+          fields.push(["output", text]);
         }
       }
       // Index only the messages ModelEventView draws. Text outside them never

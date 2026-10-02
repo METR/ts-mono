@@ -1197,7 +1197,7 @@
   },
   "packages/inspect-components/src/transcript/eventText.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
+      "count": 3
     }
   },
   "packages/inspect-components/src/transcript/FocusTurnView.tsx": {
@@ -1385,9 +1385,17 @@
       "count": 1
     }
   },
+  "packages/react/src/components/ExtendedFindContext.test.tsx": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "tsmono/no-raw-use-effect": {
+      "count": 3
+    }
+  },
   "packages/react/src/components/FindBand.test.tsx": {
     "tsmono/no-raw-use-effect": {
-      "count": 1
+      "count": 2
     }
   },
   "packages/react/src/components/FindBand.tsx": {
@@ -1400,7 +1408,7 @@
       "undescribed": 1
     },
     "tsmono/no-raw-use-effect": {
-      "count": 2
+      "count": 3
     }
   },
   "packages/react/src/components/LightboxCarousel.tsx": {
@@ -1591,7 +1599,7 @@
   },
   "packages/react/src/virtual/VirtualList.tsx": {
     "tsmono/no-raw-use-effect": {
-      "count": 15
+      "count": 16
     }
   },
   "packages/scout-components/src/scanner-result-detail/ScannerResultDetailView.tsx": {
