@@ -581,6 +581,6 @@ describe("SearchPanel", () => {
     expect(panel).not.toBeNull();
     // The whole panel, not just the results list: the query textarea and the
     // recent-searches list are the same class of chrome.
-    expect(panel?.querySelector("textarea")).not.toBeNull();
+    expect(panel?.querySelector("vscode-textarea")).not.toBeNull();
   });
 });
