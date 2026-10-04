@@ -2775,6 +2775,8 @@ export interface components {
             output: components["schemas"]["ModelOutput"];
             /** Pending */
             pending?: boolean | null;
+            /** Request Ids */
+            request_ids?: components["schemas"]["ModelRequestId"][] | null;
             /** Retries */
             retries?: number | null;
             /** Role */
@@ -2841,9 +2843,23 @@ export interface components {
             } | null;
             /** Model */
             model: string;
+            /** Response Id */
+            response_id?: string | null;
             /** Time */
             time?: number | null;
             usage?: components["schemas"]["ModelUsage"] | null;
+        };
+        /**
+         * ModelRequestId
+         * @description Provider request id from an HTTP response.
+         */
+        ModelRequestId: {
+            /** Header */
+            header: string;
+            /** Id */
+            id: string;
+            /** Status */
+            status: number;
         };
         /**
          * ModelUsage
