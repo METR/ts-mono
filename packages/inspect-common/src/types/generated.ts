@@ -2777,6 +2777,8 @@ export interface components {
             pending?: boolean | null;
             /** Request Ids */
             request_ids?: components["schemas"]["ModelRequestId"][] | null;
+            /** Requested Model */
+            requested_model?: string | null;
             /** Retries */
             retries?: number | null;
             /** Role */
