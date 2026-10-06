@@ -307,8 +307,8 @@
   },
   "apps/inspect/src/app/samples/SampleDisplay.tsx": {
     "@typescript-eslint/no-floating-promises": {
-      "count": 5,
-      "undescribed": 5
+      "count": 3,
+      "undescribed": 3
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 3
@@ -516,12 +516,6 @@
     },
     "@typescript-eslint/no-unsafe-type-assertion (file-wide)": {
       "count": 1
-    }
-  },
-  "apps/inspect/src/components/DownloadButton.tsx": {
-    "@typescript-eslint/no-floating-promises": {
-      "count": 1,
-      "undescribed": 1
     }
   },
   "apps/inspect/src/log_data/chunked/chunkedSample.ts": {
@@ -1520,7 +1514,7 @@
   },
   "packages/inspect-components/src/transcript/eventText.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
+      "count": 3
     }
   },
   "packages/inspect-components/src/transcript/eventText.ts": {
@@ -1793,9 +1787,17 @@
       "count": 1
     }
   },
+  "packages/react/src/components/ExtendedFindContext.test.tsx": {
+    "@typescript-eslint/no-unnecessary-condition": {
+      "count": 1
+    },
+    "tsmono/no-raw-use-effect": {
+      "count": 3
+    }
+  },
   "packages/react/src/components/FindBand.test.tsx": {
     "tsmono/no-raw-use-effect": {
-      "count": 1
+      "count": 2
     }
   },
   "packages/react/src/components/FindBand.tsx": {
@@ -1808,7 +1810,7 @@
       "undescribed": 1
     },
     "tsmono/no-raw-use-effect": {
-      "count": 2
+      "count": 3
     }
   },
   "packages/react/src/components/LightboxCarousel.tsx": {
@@ -1997,7 +1999,7 @@
   },
   "packages/react/src/virtual/VirtualList.tsx": {
     "tsmono/no-raw-use-effect": {
-      "count": 15
+      "count": 16
     }
   },
   "packages/scout-components/src/scanner-result-detail/ScannerResultDetailView.tsx": {

@@ -34,6 +34,18 @@ export type ImmerStore = UseBoundStore<
 
 export let storeImplementation: ImmerStore | null = null;
 
+/** Update host capabilities without resetting selection, logs, or sample state. */
+export const updateCapabilities = (
+  capabilities: Partial<Capabilities>
+): void => {
+  if (!storeImplementation) {
+    throw new Error("Call initializeStore before updateCapabilities");
+  }
+  storeImplementation.setState((state) => {
+    Object.assign(state.capabilities, capabilities);
+  });
+};
+
 // The data that will actually be persisted
 export type PersistedState = {
   app: AppSlice["app"];

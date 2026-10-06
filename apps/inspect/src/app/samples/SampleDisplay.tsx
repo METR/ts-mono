@@ -76,6 +76,7 @@ import {
   kSampleTranscriptTabId,
   kSampleUsageTabId,
 } from "../../constants";
+import { runExport, type ExportKind } from "../../exports";
 import {
   kDefaultMessageRowOptions,
   useMessagesExport,
@@ -610,6 +611,13 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
 
   if (downloadFiles && sample) {
     const sampleId = sample.id;
+    const download = (kind: ExportKind, action: () => Promise<void>): void => {
+      runExport({ kind, logFile: printLogPath ?? "" }, action).catch(
+        (error: unknown) => {
+          console.error("Failed to export sample:", error);
+        }
+      );
+    };
     tools.push(
       <ToolDropdownButton
         key="sample-download"
@@ -619,10 +627,11 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
         dropdownClassName="text-size-smallest"
         items={{
           "Sample JSON": () => {
-            // eslint-disable-next-line @typescript-eslint/no-floating-promises
-            api.download_file(
-              `${sampleId}.json`,
-              JSON.stringify(sample, null, 2)
+            download("sample_json", () =>
+              api.download_file(
+                `${sampleId}.json`,
+                JSON.stringify(sample, null, 2)
+              )
             );
           },
           // offered only when a settled conversation exists to export (see
@@ -630,25 +639,23 @@ export const SampleDisplay: FC<SampleDisplayProps> = ({
           ...(exportMessages
             ? {
                 Messages: () => {
-                  exportMessages()
-                    .then((parts) =>
-                      api.download_file(
-                        `${sampleId}-messages.txt`,
-                        new Blob(parts, { type: "text/plain" })
-                      )
-                    )
-                    .catch((error: unknown) => {
-                      console.error("Failed to download messages:", error);
-                    });
+                  download("sample_messages", async () => {
+                    const parts = await exportMessages();
+                    await api.download_file(
+                      `${sampleId}-messages.txt`,
+                      new Blob(parts, { type: "text/plain" })
+                    );
+                  });
                 },
               }
             : {}),
           Transcript: () => {
             if (sampleEvents.length > 0) {
-              // eslint-disable-next-line @typescript-eslint/no-floating-promises
-              api.download_file(
-                `${sampleId}-transcript.txt`,
-                eventsToStr(sampleEvents)
+              download("sample_transcript", () =>
+                api.download_file(
+                  `${sampleId}-transcript.txt`,
+                  eventsToStr(sampleEvents)
+                )
               );
             }
           },

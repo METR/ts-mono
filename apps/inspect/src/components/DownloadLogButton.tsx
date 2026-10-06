@@ -3,6 +3,7 @@ import { JSX, useState } from "react";
 
 import { getApi } from "../app_config";
 import { ApplicationIcons } from "../app/appearance/icons";
+import { runExport } from "../exports";
 
 import styles from "./DownloadLogButton.module.css";
 
@@ -23,12 +24,14 @@ export const DownloadLogButton = ({
   const api = getApi();
 
   const handleClick = (): void => {
-    if (!api.download_log) return;
+    const downloadLog = api.download_log;
+    if (!downloadLog) return;
 
     setDownloadState("downloading");
 
-    api
-      .download_log(log_file)
+    runExport({ kind: "eval_file", logFile: log_file }, () =>
+      downloadLog(log_file)
+    )
       .then(() => setDownloadState("success"))
       .catch((error: unknown) => {
         console.error("Failed to download log:", error);

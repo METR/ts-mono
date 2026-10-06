@@ -47,7 +47,9 @@ export type {
 } from "@tsmono/inspect-common/types";
 
 // State Store
-export { initializeStore } from "./state/store";
+export { initializeStore, updateCapabilities } from "./state/store";
+export { setExportHandler } from "./exports";
+export type { ExportContext, ExportHandler, ExportKind } from "./exports";
 
 // Selection hooks
 export {
