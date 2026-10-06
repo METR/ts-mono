@@ -40,10 +40,12 @@ export const ZustandDevtoolsPanel: FC<ZustandDevtoolsPanelProps> = ({
     (onChange: () => void) => {
       let timeout: number | null = null;
       const unsubscribe = store.subscribe(() => {
-        timeout ??= window.setTimeout(() => {
-          timeout = null;
-          onChange();
-        }, THROTTLE_MS);
+        if (timeout === null) {
+          timeout = window.setTimeout(() => {
+            timeout = null;
+            onChange();
+          }, THROTTLE_MS);
+        }
       });
       return () => {
         if (timeout !== null) window.clearTimeout(timeout);
@@ -56,9 +58,9 @@ export const ZustandDevtoolsPanel: FC<ZustandDevtoolsPanelProps> = ({
   const state = useSyncExternalStore(subscribe, getSnapshot);
 
   const topEntries = entriesOf(state);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected =
-    topEntries.find((e) => e.key === selectedKey) ?? topEntries.at(0);
+    topEntries.find((e) => e.id === selectedId) ?? topEntries.at(0);
 
   const panelClass = `${styles.panel} ${theme === "light" ? styles.light : styles.dark}`;
 
@@ -83,13 +85,14 @@ export const ZustandDevtoolsPanel: FC<ZustandDevtoolsPanelProps> = ({
               <div className={styles.sidebar}>
                 {topEntries.map((entry) => (
                   <button
-                    key={entry.key}
+                    type="button"
+                    key={entry.id}
                     className={
-                      entry.key === selected.key
+                      entry.id === selected.id
                         ? `${styles.sidebarItem} ${styles.sidebarItemSelected}`
                         : styles.sidebarItem
                     }
-                    onClick={() => setSelectedKey(entry.key)}
+                    onClick={() => setSelectedId(entry.id)}
                   >
                     {entry.key}
                   </button>
@@ -97,7 +100,7 @@ export const ZustandDevtoolsPanel: FC<ZustandDevtoolsPanelProps> = ({
               </div>
               <div className={styles.tree}>
                 <TreeNode
-                  key={selected.key}
+                  key={selected.id}
                   name={selected.key}
                   value={selected.value}
                   defaultExpanded

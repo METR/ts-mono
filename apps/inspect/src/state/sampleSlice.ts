@@ -2,16 +2,6 @@ import { SampleState } from "../app/types";
 
 import { StoreState } from "./store";
 
-export const kDefaultExcludeEvents = [
-  "sample_init",
-  "sandbox",
-  "state",
-  "store",
-  "branch",
-  "anchor",
-  "checkpoint",
-];
-
 export interface SampleSlice {
   sample: SampleState;
   sampleActions: {
@@ -29,7 +19,7 @@ export interface SampleSlice {
     clearCollapsedIds: (key: string) => void;
     setCollapsedMode: (mode: "collapsed" | "expanded" | null) => void;
 
-    setFilteredEventTypes: (types: string[]) => void;
+    setFilteredEventTypes: (types: string[] | null) => void;
 
     setVisiblePopover: (id: string) => void;
     clearVisiblePopover: () => void;
@@ -48,7 +38,9 @@ const initialState: SampleState = {
   collapsedEvents: null,
   collapsedMode: null,
   eventFilter: {
-    filteredTypes: [...kDefaultExcludeEvents],
+    // null = the Default preset, resolved dynamically from the sample's
+    // events (see dynamicDefaultExcludeEvents)
+    filteredTypes: null,
   },
 
   collapsedIdBuckets: {},
@@ -73,9 +65,8 @@ export const createSampleSlice = (
           state.sample.activeTimelineIndex = 0;
           state.log.selectedSampleHandle = undefined;
 
-          // Clear persisted scroll/list positions
+          // Clear persisted scroll positions
           delete state.app.propertyBags["scrollPosition"];
-          delete state.app.propertyBags["listPosition"];
         });
       },
       setCollapsedEvents: (
@@ -140,7 +131,7 @@ export const createSampleSlice = (
           state.sample.collapsedMode = mode;
         });
       },
-      setFilteredEventTypes: (types: string[]) => {
+      setFilteredEventTypes: (types: string[] | null) => {
         set((state) => {
           state.sample.eventFilter.filteredTypes = types;
         });
@@ -185,6 +176,7 @@ export const initializeSampleSlice = (
   set: (fn: (state: StoreState) => void) => void
 ) => {
   set((state) => {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!state.sample) {
       state.sample = initialState;
     }

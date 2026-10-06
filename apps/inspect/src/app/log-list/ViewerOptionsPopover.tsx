@@ -39,9 +39,8 @@ export const ViewerOptionsPopover: FC<ViewerOptionsPopoverProps> = ({
       console.error("Failed to clear database:", error);
       setClearMessage("Failed to clear database");
       setTimeout(() => setClearMessage(null), 3000);
-    } finally {
-      setIsClearing(false);
     }
+    setIsClearing(false);
   };
 
   return (
@@ -115,6 +114,7 @@ export const ViewerOptionsPopover: FC<ViewerOptionsPopoverProps> = ({
         <div className={clsx()}>
           {" "}
           <button
+            type="button"
             onClick={handleClearDatabase}
             disabled={isClearing}
             className={clsx(

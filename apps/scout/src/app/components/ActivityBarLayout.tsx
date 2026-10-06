@@ -1,5 +1,5 @@
 import { FC, ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 
 import { useLoggingNavigate } from "../../debugging/navigationDebugging";
 import {
@@ -42,7 +42,6 @@ export const ActivityBarLayout: FC<ActivityBarLayoutProps> = ({
       if (options?.openInNewTab) {
         openRouteInNewTab(activity.route);
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         navigate(activity.route);
       }
     }

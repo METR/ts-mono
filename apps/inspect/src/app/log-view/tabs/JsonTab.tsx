@@ -57,9 +57,9 @@ export const useJsonTabConfig = (logDetails: LogHeader | undefined) => {
 const copyFeedback = (e: MouseEvent<HTMLElement>) => {
   const textEl = e.currentTarget.querySelector(".task-btn-copy-content");
   const iconEl = e.currentTarget.querySelector("i.bi");
-  if (textEl) {
-    const htmlEl = textEl as HTMLElement;
-    const htmlIconEl = iconEl as HTMLElement;
+  if (textEl instanceof HTMLElement && iconEl instanceof HTMLElement) {
+    const htmlEl = textEl;
+    const htmlIconEl = iconEl;
     const oldText = htmlEl.innerText;
     const oldIconClz = htmlIconEl.className;
     htmlEl.innerText = "Copied!";
@@ -85,7 +85,14 @@ interface JsonTabProps {
  */
 export const JsonTab: FC<JsonTabProps> = ({ logFile, json }) => {
   const downloadFiles = useStore((state) => state.capabilities.downloadFiles);
-  if (logFile && json.length > kJsonMaxSize && downloadFiles) {
+  if (logFile && json.length > kJsonMaxSize) {
+    if (!downloadFiles) {
+      return (
+        <div className={styles.jsonTab}>
+          The JSON is too large to render. Downloads are unavailable.
+        </div>
+      );
+    }
     // This JSON file is so large we can't really productively render it
     // we should instead just provide a DL link
     const file = `${filename(logFile)}.json`;
@@ -96,6 +103,7 @@ export const JsonTab: FC<JsonTabProps> = ({ logFile, json }) => {
           buttonLabel="Download JSON File"
           fileName={file}
           fileContents={json}
+          exportContext={{ kind: "eval_json", logFile }}
         />
       </div>
     );

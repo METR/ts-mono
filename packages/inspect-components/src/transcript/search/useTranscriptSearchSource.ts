@@ -7,6 +7,7 @@ import {
   type ExtendedFindFn,
   type FindDirection,
 } from "@tsmono/react/components";
+import { useUnmount } from "@tsmono/react/hooks";
 
 import type { SwimlaneRow } from "../timeline/swimlaneRows";
 import type { TranscriptViewNodesHandle } from "../TranscriptViewNodes";
@@ -14,7 +15,9 @@ import type { TranscriptViewNodesHandle } from "../TranscriptViewNodes";
 import {
   buildEventToRowMap,
   findAllMatches,
+  findVariantPositions,
   SampleMatch,
+  searchVariants,
 } from "./sampleSearch";
 
 const DEFAULT_ID = "transcript-sample";
@@ -66,10 +69,23 @@ export function useTranscriptSearchSource(
     onHeadroomSetHidden,
     id = DEFAULT_ID,
   } = options;
-  const { registerVirtualList, registerMatchCounter } = useExtendedFind();
+  const { registerVirtualList, registerMatchCounter, registerMatchLocator } =
+    useExtendedFind();
   const setFindTarget = useFindTargetSetter();
 
   const eventToRow = useMemo(() => buildEventToRowMap(rows), [rows]);
+
+  // Position of each event in the sample's global order. `findAllMatches`
+  // walks `events` in this order, so it doubles as the ordering of `matches`
+  // and lets the viewport anchor compare positions across rows — the view's
+  // flattened nodes only cover the selected row.
+  const eventOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    events.forEach((event, index) => {
+      if (event.uuid) map.set(event.uuid, index);
+    });
+    return map;
+  }, [events]);
 
   const cacheRef = useRef<{
     events: Event[];
@@ -98,6 +114,7 @@ export function useTranscriptSearchSource(
   // Read across `await` boundaries to detect "user is already on this row"
   // mid-search; needs to be a ref so a row-switch in flight sees the update.
   const selectedRef = useRef(selected);
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
   useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
@@ -109,13 +126,10 @@ export function useTranscriptSearchSource(
   // Self-correction timers scheduled at the end of searchFn. Tracked so
   // unmount can clear them — otherwise they fire against detached DOM.
   const pendingTimersRef = useRef<Set<number>>(new Set());
-  useEffect(() => {
-    const timers = pendingTimersRef.current;
-    return () => {
-      for (const t of timers) clearTimeout(t);
-      timers.clear();
-    };
-  }, []);
+  useUnmount(() => {
+    for (const t of pendingTimersRef.current) clearTimeout(t);
+    pendingTimersRef.current.clear();
+  });
 
   // Active search term. Set by countFn on every keystroke so the listener
   // below has it on the first selectionchange after a fresh search.
@@ -123,6 +137,7 @@ export function useTranscriptSearchSource(
   // Keep `lastResolvedRef` in sync when window.find advances within a row
   // without going through our searchFn. Otherwise the next cross-row
   // navigation would pickNext from a stale position.
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
   useEffect(() => {
     if (typeof document === "undefined") return;
     const onSelectionChange = () => {
@@ -140,7 +155,24 @@ export function useTranscriptSearchSource(
       if (range.toString().toLowerCase() !== term.toLowerCase()) return;
       const matches = getMatches(term);
       const match = matchAtSelection(matches, term);
-      if (match) lastResolvedRef.current = { match, term };
+      if (match) {
+        lastResolvedRef.current = { match, term };
+      } else if (!selectionInEvent(lastResolvedRef.current?.match.eventId)) {
+        // The selection has genuinely left the remembered event — forget the
+        // position rather than let the next cross-row jump resume from it (a
+        // stale ref is what made Next teleport back to the top of the
+        // transcript). But `matchAtSelection` can also come up empty while
+        // the selection is still sitting on the remembered event: some
+        // panels render more DOM occurrences of the term than
+        // `extractEventFields` counted as matches (e.g. an assistant `input`
+        // message the panel shows but the field extractor skips), so the
+        // occurrence-index walk can overshoot. That's not the user moving
+        // away, so `selectionInEvent` above keeps the ref intact for it. A
+        // cleared selection (rangeCount 0, e.g. findExtendedInDOM's
+        // deliberate removeAllRanges before calling us) early-returns above
+        // and leaves the ref intact either way.
+        lastResolvedRef.current = null;
+      }
     };
     document.addEventListener("selectionchange", onSelectionChange);
     return () =>
@@ -154,6 +186,20 @@ export function useTranscriptSearchSource(
       // listener — earlier than searchFn, which only fires on cross-row jumps.
       activeTermRef.current = term;
       return getMatches(term).length;
+    },
+    [getMatches]
+  );
+
+  // Answers "which match is the user's selection on?" for FindBand's counter.
+  // Unlike searchFn this runs while the selection is live — FindBand calls it
+  // after window.find has landed, whereas findExtendedInDOM clears the
+  // selection before it ever reaches searchFn.
+  const locatorFn = useCallback(
+    (term: string): number | null => {
+      if (!term) return null;
+      const matches = getMatches(term);
+      const match = matchAtSelection(matches, term);
+      return match ? matches.indexOf(match) : null;
     },
     [getMatches]
   );
@@ -174,13 +220,14 @@ export function useTranscriptSearchSource(
       onHeadroomResetAnchor?.(true);
       onHeadroomSetHidden?.(direction === "forward");
 
-      let position = resolvePosition(
+      let position = resolvePosition({
         matches,
-        lastResolvedRef.current,
-        viewNodesRef.current,
-        selectedRef.current,
-        term
-      );
+        term,
+        direction,
+        last: lastResolvedRef.current,
+        view: viewNodesRef.current,
+        eventOrder,
+      });
 
       // Iterate forward/backward until we find a match whose panel actually
       // mounts. Some events (deeply nested under collapsed subtask spans, or
@@ -264,6 +311,7 @@ export function useTranscriptSearchSource(
     },
     [
       getMatches,
+      eventOrder,
       viewNodesRef,
       onSelect,
       setFindTarget,
@@ -272,14 +320,25 @@ export function useTranscriptSearchSource(
     ]
   );
 
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
   useEffect(() => {
     const unCount = registerMatchCounter(id, countFn);
     const unSearch = registerVirtualList(id, searchFn);
+    const unLocate = registerMatchLocator(id, locatorFn);
     return () => {
       unCount();
       unSearch();
+      unLocate();
     };
-  }, [id, registerMatchCounter, registerVirtualList, countFn, searchFn]);
+  }, [
+    id,
+    registerMatchCounter,
+    registerVirtualList,
+    registerMatchLocator,
+    countFn,
+    searchFn,
+    locatorFn,
+  ]);
 }
 
 function pickNext(
@@ -297,14 +356,34 @@ function pickNext(
     : matches[(position - 1 + len) % len]!;
 }
 
-function resolvePosition(
-  matches: SampleMatch[],
-  last: { match: SampleMatch; term: string } | null,
-  view: TranscriptViewNodesHandle | null,
-  selected: string | null,
-  term: string
-): number {
-  // Prefer the last-resolved match when the term hasn't changed.
+interface ResolvePositionOptions {
+  matches: SampleMatch[];
+  term: string;
+  direction: FindDirection;
+  last: { match: SampleMatch; term: string } | null;
+  view: TranscriptViewNodesHandle | null;
+  eventOrder: Map<string, number>;
+}
+
+/**
+ * Index of the "current" match — the one `pickNext` advances from.
+ *
+ * Layered, most trustworthy first:
+ *  1. the last match the selection listener resolved, when the term is
+ *     unchanged. That listener sees every `window.find` hit, so this is the
+ *     live selection's position; it is cleared when the selection leaves the
+ *     remembered event (a selection on a different, unindexed occurrence
+ *     within that same event does not clear it).
+ *  2. the viewport, so a press moves on from what is on screen rather than
+ *     jumping to the top of the transcript.
+ *  3. -1, when no view is mounted, or when no visible node maps to a known
+ *     event (see `viewportPosition`) — `pickNext` then falls back to
+ *     `matches[0]` (forward) or the last match (backward), matching the
+ *     direction, which is right for a fresh search with nothing resolved.
+ */
+function resolvePosition(opts: ResolvePositionOptions): number {
+  const { matches, term, direction, last, view, eventOrder } = opts;
+
   if (last && last.term === term) {
     const idx = matches.findIndex(
       (m) =>
@@ -315,17 +394,92 @@ function resolvePosition(
     );
     if (idx !== -1) return idx;
   }
-  // Fallback: first match in the currently-visible row.
+
+  return viewportPosition(matches, direction, view, eventOrder);
+}
+
+/**
+ * Anchor to what is on screen: map the visible nodes into the global event
+ * order, then return the index just outside the viewport in the direction of
+ * travel, so `pickNext` lands on the first match at or beyond the current view.
+ *
+ * Returns -1 when nothing is mounted or no visible node is a known event, which
+ * `pickNext` reads as "no current position".
+ */
+function viewportPosition(
+  matches: SampleMatch[],
+  direction: FindDirection,
+  view: TranscriptViewNodesHandle | null,
+  eventOrder: Map<string, number>
+): number {
   const range = view?.getVisibleRange();
   const flattened = view?.getFlattenedNodes() ?? [];
   if (!range || flattened.length === 0) return -1;
-  const visibleIds = new Set(
-    flattened.slice(range.startIndex, range.endIndex + 1).map((n) => n.id)
+
+  let minVisible = Infinity;
+  let maxVisible = -Infinity;
+  for (const node of flattened.slice(range.startIndex, range.endIndex + 1)) {
+    const order = eventOrder.get(node.id);
+    // Synthetic node ids (events without a uuid) aren't in the map.
+    if (order === undefined) continue;
+    if (order < minVisible) minVisible = order;
+    if (order > maxVisible) maxVisible = order;
+  }
+  if (minVisible === Infinity) return -1;
+
+  // `matches` is in global event order, so the boundary is a linear scan.
+  if (direction === "forward") {
+    const first = matches.findIndex(
+      (m) => (eventOrder.get(m.eventId) ?? -1) >= minVisible
+    );
+    // Every match sits above the viewport — resume at the end so pickNext
+    // wraps to the top, the only sensible forward move.
+    if (first === -1) return matches.length - 1;
+    return first - 1;
+  }
+
+  let lastIdx = -1;
+  for (let i = 0; i < matches.length; i++) {
+    if ((eventOrder.get(matches[i]!.eventId) ?? Infinity) <= maxVisible) {
+      lastIdx = i;
+    }
+  }
+  // Every match sits below the viewport — resume at the start so pickNext
+  // wraps to the end.
+  if (lastIdx === -1) return 0;
+  return lastIdx + 1;
+}
+
+/**
+ * Walk up from `node` to the nearest ancestor element whose `id` satisfies
+ * `isMatch`, treating `node` itself as the starting point if it's already an
+ * element. Returns `null` if no such ancestor exists.
+ */
+function closestEventAncestor(
+  node: Node,
+  isMatch: (id: string) => boolean
+): Element | null {
+  let el: Element | null = node instanceof Element ? node : node.parentElement;
+  while (el && !isMatch(el.id)) el = el.parentElement;
+  return el;
+}
+
+/**
+ * True if the current document selection sits inside the event panel with id
+ * `eventId`. Used by the selectionchange listener to distinguish "the user
+ * is still on the remembered match, but our occurrence index came up short"
+ * from "the user has moved somewhere else" — only the latter should forget
+ * `lastResolvedRef`. Returns `false` when `eventId` is `undefined` (nothing
+ * remembered, so nothing to protect) or when there is no live selection.
+ */
+function selectionInEvent(eventId: string | undefined): boolean {
+  if (!eventId || typeof window === "undefined") return false;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  return (
+    closestEventAncestor(range.startContainer, (id) => id === eventId) !== null
   );
-  const idx = matches.findIndex(
-    (m) => m.rowKey === selected && visibleIds.has(m.eventId)
-  );
-  return idx;
 }
 
 /**
@@ -351,35 +505,30 @@ function matchAtSelection(
   const range = sel.getRangeAt(0);
 
   const eventIds = new Set(matches.map((m) => m.eventId));
-  let el: Element | null =
-    range.startContainer.nodeType === Node.ELEMENT_NODE
-      ? (range.startContainer as Element)
-      : range.startContainer.parentElement;
-  while (el && !eventIds.has(el.id)) el = el.parentElement;
+  const el = closestEventAncestor(range.startContainer, (id) =>
+    eventIds.has(id)
+  );
   if (!el) return null;
   const eventId = el.id;
 
-  const lowered = term.toLowerCase();
+  // Count under the same variants `findAllMatches` enumerated, or the
+  // occurrence index computed here would address a different match than the
+  // one the user selected. A quoted term is the case that breaks: the match
+  // list counts every bare `role`, so counting only literal `"role"` in the
+  // DOM maps the selection onto some earlier match entirely.
+  const variants = searchVariants(term);
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
   let occurrenceInEvent = 0;
   let node: Node | null;
   while ((node = walker.nextNode())) {
-    const textNode = node as Text;
-    if (textNode === range.startContainer) {
-      const head = textNode.data.slice(0, range.startOffset).toLowerCase();
-      let from = 0;
-      while ((from = head.indexOf(lowered, from)) !== -1) {
-        occurrenceInEvent++;
-        from += lowered.length;
-      }
-      break;
-    }
-    const text = textNode.data.toLowerCase();
-    let from = 0;
-    while ((from = text.indexOf(lowered, from)) !== -1) {
-      occurrenceInEvent++;
-      from += lowered.length;
-    }
+    if (!(node instanceof Text)) continue;
+    const textNode = node;
+    const atSelection = textNode === range.startContainer;
+    const text = (
+      atSelection ? textNode.data.slice(0, range.startOffset) : textNode.data
+    ).toLowerCase();
+    occurrenceInEvent += findVariantPositions(text, variants).length;
+    if (atSelection) break;
   }
 
   let seen = 0;
@@ -420,7 +569,8 @@ function positionSelectionAroundTerm(
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let target: { node: Text; idx: number } | null = null;
   for (let node; (node = walker.nextNode());) {
-    const textNode = node as Text;
+    if (!(node instanceof Text)) continue;
+    const textNode = node;
     const text = textNode.data.toLowerCase();
     let from = 0;
     while ((from = text.indexOf(lowered, from)) !== -1) {
@@ -446,7 +596,7 @@ function positionSelectionAroundTerm(
 
 /**
  * If the current selection no longer covers `term` inside the panel
- * (because a late settling pass — Virtuoso re-render, lazy syntax
+ * (because a late settling pass — virtual-list re-render, lazy syntax
  * highlighting, ExpandablePanel auto-expand reflow — detached the text
  * node `window.find` was anchored on), re-anchor the selection to the
  * first occurrence of `term` in the panel. Returns false (no-op) when
@@ -511,7 +661,7 @@ async function waitForRow(
 
 /**
  * Wait until the event panel is actually rendered to the DOM. After
- * `scrollToEvent` triggers a Virtuoso scroll for an off-screen target, the
+ * `scrollToEvent` triggers a virtual-list scroll for an off-screen target, the
  * panel takes several frames to mount. Returns false on timeout. The budget
  * is shorter than for row mount because we use this to detect unreachable
  * matches and skip them — too long a wait makes skipping feel laggy.

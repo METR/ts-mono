@@ -34,6 +34,18 @@ export type ImmerStore = UseBoundStore<
 
 export let storeImplementation: ImmerStore | null = null;
 
+/** Update host capabilities without resetting selection, logs, or sample state. */
+export const updateCapabilities = (
+  capabilities: Partial<Capabilities>
+): void => {
+  if (!storeImplementation) {
+    throw new Error("Call initializeStore before updateCapabilities");
+  }
+  storeImplementation.setState((state) => {
+    Object.assign(state.capabilities, capabilities);
+  });
+};
+
 // The data that will actually be persisted
 export type PersistedState = {
   app: AppSlice["app"];
@@ -42,6 +54,7 @@ export type PersistedState = {
 };
 
 // Create a proxy store that forwards calls to the real store once initialized
+// eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- store-proxy boundary: the wrapper forwards to the real bound store, and zustand's UseBoundStore signature (callable plus statics) can't be reconstructed structurally
 export const useStore = ((selector?: (state: StoreState) => unknown) => {
   if (!storeImplementation) {
     throw new Error(
@@ -61,6 +74,7 @@ export const initializeStore = (
   // Create the storage implementation
   const storageImplementation = {
     getItem: <T>(name: string): T | null => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- persisted webview/store state (#555): the host returns whatever it stored, and T is the caller's claim
       return storage ? (storage.getItem(name) as T) : null;
     },
     setItem: debounce(<T>(name: string, value: T): void => {
@@ -100,6 +114,7 @@ export const initializeStore = (
           name: "app-storage",
           storage: storageImplementation,
           partialize: (state) =>
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- zustand-persist types partialize as StoreState -> StoreState, but a partial slice is exactly what it is for
             ({
               app: { ...state.app, rehydrated: true },
               log: state.log,
@@ -124,4 +139,8 @@ export const initializeStore = (
   // Set the implementation and initialize it
   storeImplementation = store;
   store.getState().initialize(capabilities);
+
+  // Purge the legacy Virtuoso list-position bags that pre-#525 sessions
+  // persisted; nothing reads or clears them anymore.
+  store.getState().appActions.removeBagsByPrefix("listPosition");
 };

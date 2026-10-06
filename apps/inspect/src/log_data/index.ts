@@ -92,6 +92,19 @@
 //   always present.
 // ---------------------------------------------------------------------------
 export { imperativeLogData } from "./imperativeLogData";
+export {
+  databaseLogsListingKey,
+  databaseLogsListingKeyRoot,
+  invalidateDatabaseLogsListings,
+  listingKeyUniverse,
+} from "./databaseListings";
+export {
+  readLogsListing,
+  readLogsListingMatches,
+  readLogsOverview,
+  type LogsOverview,
+  type LogsOverviewView,
+} from "./logsListingRead";
 export { useLogHeader, useLogFetchState } from "./log";
 export { type LogListingRow, useLogListing } from "./logListing";
 export { resolveLogKey } from "./logsContent";
@@ -106,7 +119,37 @@ export {
   type SamplesScope,
   useSamplesListing,
 } from "./samplesListing";
+// Chunked-format sample support (design/large-samples.md in the inspect_ai
+// repo): the headless data layer (./chunked) plus its app-side query and
+// attachment-resolution glue. A *chunked sample* stores its four sequences
+// (messages/events/calls/attachments) as index-addressed zip entries read by
+// range; the transcript consumes windowed *view rows* instead of
+// `sample.events`.
+export {
+  candidateOutlineRows,
+  defaultCollapsedSpanIds,
+  RowSpace,
+  sampleSkeleton,
+  syntheticEventsFromSkeleton,
+  type ChunkedEvent,
+  type ChunkedSample,
+  type DecodeCtx,
+  type OutlineRow,
+  type RowSlot,
+  type SampleSkeleton,
+  type SkeletonEvent,
+  type SkeletonSpan,
+  type SyntheticStream,
+  type ViewRow,
+} from "./chunked";
+export { resolvedEventsReader } from "./chunkedAttachments";
+export { kDefaultMessageRowOptions } from "./messageRows";
+export { useMessagesExport } from "./messagesExport";
+export { useSampleMessages } from "./sampleMessages";
+export type { MessageRowsFeed } from "./messageRowsQuery";
+export { useChunkedSample, type ChunkedSampleData } from "./chunkedSampleQuery";
 export { useSampleSummaries } from "./sampleSummaries";
 export { type ScorerMap, scorerMetricKey, useScoreSchema } from "./scoreSchema";
+export { FetchEngineController } from "./FetchEngineController";
 export { useDatabaseStats } from "./useFetchEngineStatus";
 export { useLogsSync } from "./useLogsSync";

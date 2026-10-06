@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { forwardRef, type PropsWithChildren } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -621,5 +621,16 @@ describe("SearchPanel", () => {
         getSearchPanelStateKey({ scope: "events", transcriptDir })
       ];
     expect(stored).toEqual(createInitialSearchPanelState());
+  });
+
+  it("is excluded from Ctrl+F so find doesn't match result cards", () => {
+    const { container } = renderSearchPanel();
+
+    const panel = container.querySelector("[data-unsearchable]");
+
+    expect(panel).not.toBeNull();
+    // The whole panel, not just the results list: the query textarea and the
+    // recent-searches list are the same class of chrome.
+    expect(panel?.querySelector("textarea")).not.toBeNull();
   });
 });

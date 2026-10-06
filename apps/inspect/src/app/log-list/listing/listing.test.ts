@@ -2,16 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import { Column, ConditionBuilder } from "@tsmono/inspect-common/query";
 import type { Condition } from "@tsmono/inspect-common/query";
-import type {
-  ColumnFilter,
-  FilterType,
+import {
+  combineFilters,
+  type ColumnFilter,
+  type FilterType,
 } from "@tsmono/inspect-components/columnFilter";
 
 import { numberCompare } from "../grid/columns/comparators";
 
-import { applyListingQuery } from "./applyListingQuery";
-import { combineFilters } from "./combineFilters";
-import { evaluateCondition } from "./evaluator";
+import { applyListingQuery, mergeSortedRows } from "./applyListingQuery";
+import { compileCondition } from "./evaluator";
 import type { ValueComparator } from "./types";
 
 interface Row {
@@ -35,8 +35,8 @@ const getValue = (row: Row, id: string): unknown => row[id];
 const getComparator = (id: string): ValueComparator | undefined =>
   id === "score" ? numberCompare : undefined;
 
-describe("evaluateCondition", () => {
-  const ev = (c: Condition, row: Row) => evaluateCondition(row, c, getValue);
+describe("compileCondition", () => {
+  const ev = (c: Condition, row: Row) => compileCondition(c, getValue)(row);
 
   it("eq / ne", () => {
     expect(ev(new Column("model").eq("gpt-4"), r0)).toBe(true);
@@ -213,7 +213,7 @@ describe("type-aware filtering", () => {
   const getFilterType = (id: string): FilterType | undefined =>
     id === "score" ? "number" : id === "completed" ? "date" : "string";
   const ev = (c: Condition, row: Row) =>
-    evaluateCondition(row, c, getValue, getFilterType);
+    compileCondition(c, getValue, getFilterType)(row);
 
   const early: Row = {
     name: "x",
@@ -295,20 +295,32 @@ describe("type-aware filtering", () => {
     // matches neither branch.
     expect(res.items.map((r) => r.name).sort()).toEqual(["a", "b", "c"]);
   });
+});
 
-  it("combineFilters drops legacy persisted entries (pre-FilterSpec shape)", () => {
-    const legacy = {
-      model: {
-        columnId: "model",
-        filterType: "string",
-        condition: {
-          is_compound: false,
-          left: "model",
-          operator: "=",
-          right: "gpt-4",
-        },
-      },
-    } as unknown as Record<string, ColumnFilter>;
-    expect(combineFilters(legacy)).toBeUndefined();
+describe("mergeSortedRows", () => {
+  const byName = (a: Row, b: Row) => a.name.localeCompare(b.name);
+
+  it("returns the base list unchanged when the overlay is empty", () => {
+    const base = [r0, r1];
+    expect(mergeSortedRows(base, [])).toBe(base);
+  });
+
+  it("appends the overlay when no comparator is given", () => {
+    expect(mergeSortedRows([r2, r0], [r1])).toEqual([r2, r0, r1]);
+  });
+
+  it("interleaves overlay rows into sort position", () => {
+    // base: a, c — overlay: b, d
+    expect(mergeSortedRows([r0, r2], [r1, r3], byName)).toEqual([
+      r0,
+      r1,
+      r2,
+      r3,
+    ]);
+  });
+
+  it("places base rows before overlay rows on ties", () => {
+    const dupe: Row = { name: "a", model: "other" };
+    expect(mergeSortedRows([r0], [dupe], byName)).toEqual([r0, dupe]);
   });
 });

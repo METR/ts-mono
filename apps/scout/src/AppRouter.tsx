@@ -1,10 +1,5 @@
 import { FC, useCallback, useEffect, useMemo } from "react";
-import {
-  createHashRouter,
-  Outlet,
-  useLocation,
-  useParams,
-} from "react-router-dom";
+import { createHashRouter, Outlet, useLocation, useParams } from "react-router";
 
 import {
   ComponentNavigationProvider,
@@ -20,6 +15,7 @@ import { ScanPanel } from "./app/scan/ScanPanel";
 import { ScannerResultPanel } from "./app/scannerResult/ScannerResultPanel";
 import { ScansPanel } from "./app/scans/ScansPanel";
 import { useAppConfig } from "./app/server/useAppConfig";
+import { TranscriptEventPanel } from "./app/transcript/TranscriptEventPanel";
 import { TranscriptPanel } from "./app/transcript/TranscriptPanel";
 import { TranscriptsPanel } from "./app/transcripts/TranscriptsPanel";
 import { ValidationPanel } from "./app/validation/ValidationPanel";
@@ -35,6 +31,7 @@ import {
   kScansRouteUrlPattern,
   kScansWithPathRouteUrlPattern,
   kTranscriptDetailRoute,
+  kTranscriptEventDetailRoute,
   kTranscriptsRouteUrlPattern,
   kValidationRouteUrlPattern,
   parseScanParams,
@@ -159,6 +156,10 @@ export const createAppRouter = (config: AppRouterConfig) => {
             element: <ValidationPanel />,
           },
           {
+            path: kTranscriptEventDetailRoute,
+            element: <TranscriptEventPanel />,
+          },
+          {
             path: kTranscriptDetailRoute,
             element: <TranscriptPanel />,
           },
@@ -190,6 +191,7 @@ const useRoutingInitializer = (serverScansDir: string | undefined) => {
   const selectedScanLocation = useStore((state) => state.selectedScanLocation);
   const userScansDir = useStore((state) => state.userScansDir);
 
+  // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
   useEffect(() => {
     if (hasInitializedRouting) {
       return;
@@ -205,7 +207,6 @@ const useRoutingInitializer = (serverScansDir: string | undefined) => {
     const resolvedScansDir = userScansDir || serverScansDir;
     if (isDefaultRoute && selectedScanLocation && resolvedScansDir) {
       if (displayedScanResult) {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         navigate(
           scanResultRoute(
             resolvedScansDir,
@@ -215,7 +216,6 @@ const useRoutingInitializer = (serverScansDir: string | undefined) => {
           { replace: true }
         );
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         navigate(scanRoute(resolvedScansDir, selectedScanLocation), {
           replace: true,
         });

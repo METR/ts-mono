@@ -8,7 +8,7 @@
 // navigation (markers, outline links) must still use the bare hash route.
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createRef } from "react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { isHostedEnvironment } from "@tsmono/util";
@@ -27,27 +27,23 @@ const kEventRoute = `${kSampleRoute}?event=event-1`;
 
 vi.mock("../../../state/store", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../state/store")>();
-  const state = {
+  const { testStoreState } = await import("../../../state/testStore");
+  const base = testStoreState();
+  const state: StoreState = {
+    ...base,
     sample: {
+      ...base.sample,
       eventFilter: { filteredTypes: [] },
       timelineSelected: null,
       activeTimelineIndex: 0,
       collapsedEvents: null,
       collapsedMode: null,
-      selectedOutlineId: null,
+      selectedOutlineId: undefined,
     },
-    sampleActions: {
-      setTimelineSelected: () => undefined,
-      setActiveTimelineIndex: () => undefined,
-      setCollapsedEvents: () => undefined,
-      collapseEvent: () => undefined,
-      setSelectedOutlineId: () => undefined,
-      setFilteredEventTypes: () => undefined,
-    },
-    app: { propertyBags: {} },
-    appActions: { setPropertyValue: () => undefined },
-    logs: { selectedLogFile: undefined, logDir: undefined },
-  } as unknown as StoreState;
+    app: { ...base.app, propertyBags: {} },
+    logs: { ...base.logs, selectedLogFile: undefined },
+    log: { ...base.log, selectedSampleHandle: undefined },
+  };
   return {
     ...actual,
     useStore: (selector: (s: StoreState) => unknown) => selector(state),
@@ -91,7 +87,7 @@ vi.mock("@tsmono/inspect-components/transcript", async (importOriginal) => {
         {outlineUrl && props.outline?.renderLink
           ? props.outline.renderLink(outlineUrl, <span>outline link</span>)
           : null}
-        <button onClick={() => props.onMarkerNavigate?.("event-1")}>
+        <button onClick={() => props.timeline?.onMarkerNavigate?.("event-1")}>
           marker
         </button>
       </div>

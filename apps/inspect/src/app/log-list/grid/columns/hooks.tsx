@@ -96,6 +96,12 @@ export const useLogListColumns = (
   getComparator: (columnId: string) => ColumnComparator | undefined;
   /** Per-column filter type (from column meta) for client-side filtering. */
   getFilterType: (columnId: string) => FilterType | undefined;
+  /** Cache identity of the accessors above: the scorer schema they're built
+   *  from. The schema arrives asynchronously, so a query that closes over
+   *  the accessors must carry this in its key — score-column semantics
+   *  (by-metric accessors, numeric comparators/filter types) change when it
+   *  lands, with no other query input changing. */
+  accessorsKey: string;
   setColumnVisibility: (visibility: Record<string, boolean>) => void;
 } => {
   const columnVisibility = useStore(
@@ -378,6 +384,7 @@ export const useLogListColumns = (
         accessorFn: (row) => row.totalSamples,
         cell: ({ getValue }) => {
           const value = getValue<number | undefined>();
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- getValue's type argument is an unchecked assertion; row data may contain nulls the type omits
           if (value === undefined || value === null) {
             return <EmptyCell />;
           }
@@ -394,6 +401,7 @@ export const useLogListColumns = (
         accessorFn: (row) => row.completedSamples,
         cell: ({ getValue }) => {
           const value = getValue<number | undefined>();
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- getValue's type argument is an unchecked assertion; row data may contain nulls the type omits
           if (value === undefined || value === null) {
             return <EmptyCell />;
           }
@@ -423,6 +431,7 @@ export const useLogListColumns = (
         accessorFn: (row) => row.totalTokens,
         cell: ({ getValue }) => {
           const value = getValue<number | undefined>();
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- getValue's type argument is an unchecked assertion; row data may contain nulls the type omits
           if (value === undefined || value === null) {
             return <EmptyCell />;
           }
@@ -443,6 +452,7 @@ export const useLogListColumns = (
           row.duration === undefined ? null : formatTime(row.duration),
         cell: ({ getValue }) => {
           const value = getValue<number | undefined>();
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- getValue's type argument is an unchecked assertion; row data may contain nulls the type omits
           if (value === undefined || value === null) {
             return <EmptyCell />;
           }
@@ -507,6 +517,7 @@ export const useLogListColumns = (
             : `${formatPrettyDecimal(row.percentCompleted)}%`,
         cell: ({ getValue }) => {
           const value = getValue<number | undefined>();
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- getValue's type argument is an unchecked assertion; row data may contain nulls the type omits
           if (value === undefined || value === null) {
             return <EmptyCell />;
           }
@@ -523,6 +534,7 @@ export const useLogListColumns = (
         accessorFn: (row) => row.sampleErrors,
         cell: ({ getValue }) => {
           const value = getValue<number | undefined>();
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- getValue's type argument is an unchecked assertion; row data may contain nulls the type omits
           if (value === undefined || value === null) {
             return <EmptyCell />;
           }
@@ -631,11 +643,12 @@ export const useLogListColumns = (
           }[] = [];
           for (const scorer of scorerOrder) {
             const v = row[`score_${scorer}/${metricName}`];
-            if (v !== undefined && v !== null && v !== "") {
-              contributors.push({
-                scorer,
-                value: v as string | number | boolean,
-              });
+            if (
+              typeof v === "string" ||
+              typeof v === "number" ||
+              typeof v === "boolean"
+            ) {
+              if (v !== "") contributors.push({ scorer, value: v });
             }
           }
           return contributors;
@@ -816,7 +829,8 @@ export const useLogListColumns = (
   const visibility = useMemo<Record<string, boolean>>(() => {
     const v: Record<string, boolean> = {};
     for (const col of allColumns) {
-      const field = col.id as string;
+      const field = col.id;
+      if (field === undefined) continue;
       const isScoreColumn =
         field.startsWith("score_") || field.startsWith("metric_");
       const defaultVisible = isScoreColumn
@@ -831,12 +845,16 @@ export const useLogListColumns = (
   // column sets registered for layout stability, but the picker should only
   // list the checkboxes relevant to the current view mode.
   const pickerColumns = useMemo((): PickerColumn[] => {
-    return allColumns
-      .filter((col) => matchesActiveMode(col.id as string))
-      .map((col) => ({
-        colId: col.id as string,
-        headerName: typeof col.header === "string" ? col.header : "",
-      }));
+    return allColumns.flatMap((col) =>
+      col.id === undefined || !matchesActiveMode(col.id)
+        ? []
+        : [
+            {
+              colId: col.id,
+              headerName: typeof col.header === "string" ? col.header : "",
+            },
+          ]
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- matchesActiveMode is recreated each render but is safe to exclude
   }, [allColumns, viewMode]);
 
@@ -873,6 +891,18 @@ export const useLogListColumns = (
     [columnsById]
   );
 
+  // Everything the accessors read beyond the row and the column id: the
+  // scorer schema (`mode` also shapes the column set, but only in ways the
+  // accessors don't observe — and it's part of the listing universe anyway).
+  const accessorsKey = useMemo(
+    () =>
+      Object.entries(scorerMap)
+        .map(([key, { valueType }]) => `${key}:${valueType}`)
+        .sort()
+        .join(","),
+    [scorerMap]
+  );
+
   return {
     columns: allColumns,
     visibility,
@@ -880,6 +910,7 @@ export const useLogListColumns = (
     getValue,
     getComparator,
     getFilterType,
+    accessorsKey,
     setColumnVisibility,
   };
 };

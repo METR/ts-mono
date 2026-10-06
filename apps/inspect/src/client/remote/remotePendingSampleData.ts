@@ -1,4 +1,5 @@
-import { asyncJsonParseBytes } from "../../utils/json-worker";
+import { asyncJsonParseBytes } from "@tsmono/util";
+
 import { PendingSampleUrls, SampleData, SegmentRef } from "../api/types";
 import { ApiError } from "../api/view-server/request";
 
@@ -109,7 +110,8 @@ export const fetchPendingSampleDataDirect = async (
 };
 
 const readSegment = async (seg: SegmentRef): Promise<SampleData> => {
-  const url = seg.direct_url as string;
+  const url = seg.direct_url;
+  if (!url) throw new Error("segment has no direct_url");
   // Whole-zip fetch: segments contain one member per (sample, epoch), so
   // the zip is ~the member plus trivial framing — ranging buys nothing.
   let bytes: Uint8Array;

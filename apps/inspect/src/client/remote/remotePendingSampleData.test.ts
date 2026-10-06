@@ -15,7 +15,9 @@ vi.mock("./remoteZipFile", () => ({
   ),
 }));
 
-vi.mock("../../utils/json-worker", () => ({
+// jsdom has no Worker, so replace the worker-backed parse with a direct one
+vi.mock("@tsmono/util", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tsmono/util")>()),
   asyncJsonParseBytes: vi.fn((bytes: Uint8Array) =>
     Promise.resolve(JSON.parse(new TextDecoder().decode(bytes)))
   ),
@@ -53,12 +55,7 @@ describe("fetchPendingSampleDataDirect", () => {
             call_pool: [],
           })
         );
-        return {
-          ok: true,
-          status: 200,
-          statusText: "OK",
-          arrayBuffer: () => Promise.resolve(body.buffer),
-        } as unknown as Response;
+        return new Response(body, { status: 200, statusText: "OK" });
       });
     });
 

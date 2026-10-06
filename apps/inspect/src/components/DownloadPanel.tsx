@@ -1,14 +1,16 @@
 import { FC } from "react";
 
 import { DownloadButton } from "../components/DownloadButton";
+import type { ExportContext } from "../exports";
 
-import "./DownloadPanel.css";
+import styles from "./DownloadPanel.module.css";
 
 interface DownloadPanelProps {
   message: string;
   buttonLabel: string;
   fileName: string;
   fileContents: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>;
+  exportContext?: ExportContext;
 }
 
 export const DownloadPanel: FC<DownloadPanelProps> = ({
@@ -16,15 +18,17 @@ export const DownloadPanel: FC<DownloadPanelProps> = ({
   buttonLabel,
   fileName,
   fileContents,
+  exportContext,
 }) => {
   return (
     <div>
-      <div className={"download-panel"}>
-        <div className={"download-panel-message"}>{message}</div>
+      <div className={styles.downloadPanel}>
+        <div className={styles.downloadPanelMessage}>{message}</div>
         <DownloadButton
           label={buttonLabel}
           fileName={fileName}
           fileContents={fileContents}
+          exportContext={exportContext}
         />
       </div>
     </div>

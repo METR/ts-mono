@@ -9,6 +9,8 @@ import { sampleIdsEqual } from "../app/shared/sample";
 import { SampleHandle, SampleStatus } from "../app/types";
 import { SampleSummary } from "../client/api/types";
 
+import { type ChunkedSample } from "./chunked";
+import { ChunkedSampleData, useChunkedSample } from "./chunkedSampleQuery";
 import { RunningSampleData, useRunningSample } from "./runningSampleQuery";
 import { usePassiveEvalSample, useSample } from "./sampleQuery";
 import { useSampleSummaries } from "./sampleSummaries";
@@ -30,6 +32,12 @@ export interface EvalSampleData {
    *  draining), as opposed to waiting on live output. Drives the
    *  "Loading events…" affordances. */
   backfilling: boolean;
+  /** Set when a chunked-shape sample renders through the windowed path:
+   *  the transcript reads windowed rows through this instead of
+   *  `sample.events` (which the shell-synthesized `sample` carries empty).
+   *  Absent on every other path — including chunked samples that were fully
+   *  hydrated for timeline fidelity (their `sample` is complete). */
+  chunked?: ChunkedSample;
 }
 
 const settledSampleData = (sample: EvalSample): EvalSampleData => ({
@@ -37,8 +45,7 @@ const settledSampleData = (sample: EvalSample): EvalSampleData => ({
   status: "ok",
   error: undefined,
   running: kNoRunningEvents,
-  eventsCleared:
-    sample.events.length === 0 && (sample.messages?.length ?? 0) > 0,
+  eventsCleared: sample.events.length === 0 && sample.messages.length > 0,
   backfilling: false,
 });
 
@@ -49,6 +56,8 @@ export interface SampleDataInputs {
   /** The sample's merged summary (undefined while the summaries settle or
    *  when the handle isn't among them). */
   summary: SampleSummary | undefined;
+  /** Chunked-shape classification + open (null datum = monolith sample). */
+  chunked: AsyncData<ChunkedSampleData | null>;
   /** The completed-path EvalSample query. */
   query: AsyncData<EvalSample>;
   /** The running-path stream query. */
@@ -63,6 +72,7 @@ export const deriveSampleData = ({
   handle,
   summaries,
   summary,
+  chunked,
   query,
   running,
   finalizedSample,
@@ -128,6 +138,29 @@ export const deriveSampleData = ({
       backfilling: running.data?.backfilling ?? false,
     };
   }
+  // Chunked-shape samples resolve before the completed path (the completed
+  // fetch is gated on this settling null, so the branches are exclusive).
+  if (chunked.data) {
+    return {
+      sample: chunked.data.evalSample,
+      status: "ok",
+      error: undefined,
+      running: kNoRunningEvents,
+      eventsCleared: false,
+      backfilling: false,
+      chunked: chunked.data.chunked,
+    };
+  }
+  if (chunked.error) {
+    return {
+      sample: undefined,
+      status: "error",
+      error: chunked.error,
+      running: kNoRunningEvents,
+      eventsCleared: false,
+      backfilling: false,
+    };
+  }
   if (query.data !== undefined) {
     return settledSampleData(query.data);
   }
@@ -149,10 +182,12 @@ export const deriveSampleData = ({
       backfilling: false,
     };
   }
+  const loading = chunked.loading || query.loading;
   return {
     sample: undefined,
-    status: query.loading ? "loading" : query.error ? "error" : "ok",
-    error: query.loading ? undefined : query.error,
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    status: loading ? "loading" : query.error ? "error" : "ok",
+    error: loading ? undefined : query.error,
     running: kNoRunningEvents,
     eventsCleared: false,
     backfilling: false,
@@ -183,15 +218,21 @@ export const useEvalSampleData = (
     [summaries, handle]
   );
   const runningPath = summary?.completed === false;
+  const chunked = useChunkedSample(
+    !runningPath && summary !== undefined ? handle : undefined
+  );
+  // Gated on the chunked classification settling null (monolith) so exactly
+  // one path acquires the sample; the classification itself costs no fetch.
   const query = useSample(
-    logDir,
-    !runningPath && summary !== undefined ? handle : undefined,
+    !runningPath && summary !== undefined && chunked.data === null
+      ? handle
+      : undefined,
     summary
   );
   const running = useRunningSample(logDir, handle, summary);
   // The finalized EvalSample a running stream primed; read passively so the
   // completed-path fetch stays owned by useSample.
-  const finalizedSample = usePassiveEvalSample(logDir, handle);
+  const finalizedSample = usePassiveEvalSample(handle);
 
   return useMemo(
     () =>
@@ -199,11 +240,12 @@ export const useEvalSampleData = (
         handle,
         summaries,
         summary,
+        chunked,
         query,
         running,
         finalizedSample,
       }),
-    [handle, summaries, summary, query, running, finalizedSample]
+    [handle, summaries, summary, chunked, query, running, finalizedSample]
   );
 };
 
@@ -216,9 +258,8 @@ export const useEvalSampleData = (
  * the title bar).
  */
 export const usePassiveEvalSampleData = (
-  logDir: string,
   handle: SampleHandle | undefined
 ): AsyncData<EvalSampleData> => {
-  const sample = usePassiveEvalSample(logDir, handle);
+  const sample = usePassiveEvalSample(handle);
   return useMapAsyncData(sample, settledSampleData);
 };
