@@ -26,8 +26,11 @@ import {
   testStepEvent,
   testStoreEvent,
   testSubtaskEvent,
+  testSystemMessage,
   testToolCall,
   testToolEvent,
+  testToolMessage,
+  testUserMessage,
 } from "@tsmono/inspect-common/testing";
 import type {
   CompactionEvent,
@@ -155,6 +158,27 @@ describe("eventsToMarkdown", () => {
   });
 });
 
+describe.each([
+  ["Markdown", eventsToMarkdown],
+  ["text", eventsToStr],
+])("%s exports", (_format, exportEvents) => {
+  it("keeps the current model turn without repeating hidden input history", () => {
+    const event = modelEventWith("Current answer");
+    event.input = [
+      testUserMessage({ content: "Earlier question" }),
+      testAssistantMessage({ content: "Earlier answer" }),
+      testUserMessage({ content: "Current question" }),
+    ];
+
+    const out = exportEvents([event]);
+
+    expect(out).toContain("Current question");
+    expect(out).toContain("Current answer");
+    expect(out).not.toContain("Earlier question");
+    expect(out).not.toContain("Earlier answer");
+  });
+});
+
 describe("eventsToStr — reasoning content", () => {
   it("uses summary when redacted (Anthropic ≥4, OpenAI encrypted)", () => {
     const out = eventsToStr([
@@ -247,6 +271,7 @@ describe("extractEventFields — model error / traceback", () => {
       "model-1",
       testModelEvent({
         model: "test/model",
+        input: [],
         error: "API rate limit exceeded",
         traceback: "Traceback (most recent call last): ...",
       }),
@@ -962,5 +987,98 @@ describe("eventSearchText", () => {
   test("unknown event: returns empty array", () => {
     const texts = eventSearchText(makeNode(testSpanEndEvent()));
     expect(texts).toEqual([]);
+  });
+});
+
+describe("extractEventFields — model input mirrors the SUMMARY panel", () => {
+  const modelEventNode = (
+    input: ModelEvent["input"],
+    output: ModelEvent["output"] = testModelOutput({ choices: [] })
+  ) =>
+    makeNode(
+      testModelEvent({
+        model: "test/model",
+        role: null,
+        input,
+        output,
+        timestamp: "2024-01-01T00:00:00Z",
+      })
+    );
+
+  it.each([
+    {
+      desc: "skips input messages the panel does not draw",
+      input: [
+        testSystemMessage({ content: "HEAD_OF_HISTORY" }),
+        testUserMessage({ content: "OLD_TURN" }),
+        testAssistantMessage({ content: "old answer" }),
+        testToolMessage({ content: "tool result" }),
+        testUserMessage({ content: "CURRENT_TURN" }),
+      ],
+      indexed: ["CURRENT_TURN"],
+      skipped: ["HEAD_OF_HISTORY", "OLD_TURN"],
+    },
+    {
+      // [system, user] is entirely a trailing run, so nothing is hidden
+      desc: "indexes a first model call's input in full",
+      input: [
+        testSystemMessage({ content: "TASK_PROMPT" }),
+        testUserMessage({ content: "TASK_QUESTION" }),
+      ],
+      indexed: ["TASK_PROMPT", "TASK_QUESTION"],
+      skipped: [],
+    },
+    {
+      desc: "indexes a trailing assistant compaction message, and only that",
+      input: [
+        testUserMessage({ content: "OLD_TURN" }),
+        testAssistantMessage({ content: "COMPACTION_SUMMARY" }),
+      ],
+      indexed: ["COMPACTION_SUMMARY"],
+      skipped: ["OLD_TURN"],
+    },
+    {
+      desc: "stops at a trailing tool message, which the panel omits by default",
+      input: [
+        testUserMessage({ content: "PROMPT" }),
+        testToolMessage({ content: "TOOL_RESULT" }),
+      ],
+      indexed: [],
+      skipped: ["TOOL_RESULT", "PROMPT"],
+    },
+  ])("$desc", ({ input, indexed, skipped }) => {
+    const texts = eventSearchText(modelEventNode(input));
+    for (const text of indexed) {
+      expect(texts).toContain(text);
+    }
+    for (const text of skipped) {
+      expect(texts).not.toContain(text);
+    }
+  });
+
+  it("skips assistant tool_calls, which the following tool event draws", () => {
+    const texts = eventSearchText(
+      modelEventNode(
+        [testUserMessage({ content: "prompt" })],
+        testModelOutput({
+          choices: [
+            testChatCompletionChoice({
+              message: testAssistantMessage({
+                content: "",
+                tool_calls: [
+                  testToolCall({
+                    id: "call-1",
+                    function: "CANCEL_SCORE",
+                    arguments: { job_id: "JOB_ID_BLOB" },
+                  }),
+                ],
+              }),
+            }),
+          ],
+        })
+      )
+    );
+    expect(texts).not.toContain("CANCEL_SCORE");
+    expect(texts.join("\n")).not.toContain("JOB_ID_BLOB");
   });
 });

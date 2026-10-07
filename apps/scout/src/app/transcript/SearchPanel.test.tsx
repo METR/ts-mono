@@ -572,4 +572,17 @@ describe("SearchPanel", () => {
       ];
     expect(stored).toEqual(createInitialSearchPanelState());
   });
+
+  it("is excluded from Ctrl+F so find doesn't match result cards", () => {
+    const { container } = renderSearchPanel();
+
+    const panel = container.querySelector("[data-unsearchable]");
+
+    expect(panel).not.toBeNull();
+    // The whole panel, not just the results list: the query textarea and the
+    // recent-searches list are the same class of chrome.
+    expect(onlyElement("vscode-textarea").closest("[data-unsearchable]")).toBe(
+      panel
+    );
+  });
 });

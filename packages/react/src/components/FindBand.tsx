@@ -10,6 +10,7 @@ import {
 import { deepActiveElement, isEditableTarget } from "@tsmono/util";
 
 import { useDebouncedCallback } from "../hooks/useDebouncedCallback";
+import { useMountEffect } from "../hooks/useMountEffect";
 
 import { useExtendedFind } from "./ExtendedFindContext";
 import { findScrollableParent, scrollRangeToCenter } from "./findBandDom";
@@ -34,8 +35,13 @@ interface FindBandProps {
 
 export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
   const searchBoxRef = useRef<HTMLInputElement>(null);
-  const { extendedFindTerm, countAllMatches, getMatchCountersVersion } =
-    useExtendedFind();
+  const {
+    extendedFindTerm,
+    countAllMatches,
+    getMatchCountersVersion,
+    ordinalAtSelection,
+    beginFindSession,
+  } = useExtendedFind();
   const setFindTarget = useFindTargetSetter();
   const lastFoundItem = useRef<{
     text: string;
@@ -186,7 +192,15 @@ export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
             setFindTarget({ term: searchTerm, eventId: "" });
           }
 
-          if (isNewMatch) {
+          // A registered source can say exactly which match the selection is
+          // on; prefer that over counting presses, which labels the first hit
+          // "1 of N" wherever in the document it landed. The increment is the
+          // fallback for tabs that register no source (Scoring, Metadata,
+          // JSON), where nothing can map a selection to an index.
+          const ordinal = ordinalAtSelection(searchTerm);
+          if (ordinal !== null) {
+            setCurrentMatchIndex(ordinal + 1);
+          } else if (isNewMatch) {
             setCurrentMatchIndex((prev) => {
               if (back) {
                 return prev <= 1 ? total : prev - 1;
@@ -207,7 +221,13 @@ export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
 
       focusedElement?.focus();
     },
-    [setFindTarget, extendedFindTerm, countAllMatches, getMatchCountersVersion]
+    [
+      setFindTarget,
+      extendedFindTerm,
+      countAllMatches,
+      getMatchCountersVersion,
+      ordinalAtSelection,
+    ]
   );
 
   // eslint-disable-next-line tsmono/no-raw-use-effect -- baselined at rule introduction; migrate to a named hook or derived state
@@ -232,6 +252,9 @@ export const FindBand: FC<FindBandProps> = ({ onClose, debounceMs = 100 }) => {
       setFindTarget(null);
     };
   }, [setFindTarget]);
+
+  // A remounted find band starts a new session so lists discard old cursors.
+  useMountEffect(beginFindSession);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
