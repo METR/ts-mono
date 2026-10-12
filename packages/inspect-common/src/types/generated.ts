@@ -3624,7 +3624,7 @@ export interface components {
          */
         SentinelEvent: {
             /** Action */
-            action?: ("continue" | "modify" | "reject" | "terminate" | "escalate") | null;
+            action?: ("proceed" | "modify" | "reject" | "terminate" | "escalate") | null;
             /**
              * Audit
              * @default false
