@@ -2,11 +2,11 @@
  * readLogsListing: source dispatch (database vs cache), retried marking, and
  * parity with the in-memory engine — the same fixtures through
  * `applyListingQuery` and the seam must agree (the migration safety net).
- * Uses fake-indexeddb (see setupTests) behind a real OpenDatabase.
+ * Uses fake-indexeddb (see setupTests) behind the real shared handle.
  */
 
 import Dexie from "dexie";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { Column } from "@tsmono/inspect-common/query";
 import { isRecord } from "@tsmono/util";
@@ -17,6 +17,7 @@ import type { Log, LogPreview } from "../client/api/types";
 import { DB_NAME } from "../client/database/schema";
 import { OpenDatabase } from "../client/database/service";
 
+import { acquireDatabase, releaseDatabase } from "./databaseInstance";
 import { computeLogsWithRetried, type LogListingRow } from "./logListing";
 import { setRows, writeListing } from "./logsContent";
 import {
@@ -25,15 +26,6 @@ import {
   readLogsOverview,
 } from "./logsListingRead";
 import { testLogPreview } from "./testFixtures";
-
-const holder = vi.hoisted(() => {
-  const state: { service: OpenDatabase | null } = { service: null };
-  return state;
-});
-
-vi.mock("./databaseInstance", () => ({
-  currentDatabase: () => holder.service,
-}));
 
 const preview = (overrides: Partial<LogPreview>): LogPreview =>
   testLogPreview({
@@ -67,12 +59,11 @@ describe("readLogsListing", () => {
   let databaseService: OpenDatabase;
 
   beforeEach(async () => {
-    databaseService = await OpenDatabase.open();
-    holder.service = databaseService;
+    databaseService = await acquireDatabase();
   });
 
   afterEach(async () => {
-    databaseService.close();
+    await releaseDatabase();
     await Dexie.delete(DB_NAME);
   });
 
@@ -161,7 +152,7 @@ describe("readLogsListing", () => {
       testLogRow("/cache/logs/a.json"),
       testLogRow("/cache/logs-other/b.json"),
     ]);
-    holder.service = null;
+    await releaseDatabase();
 
     const result = await readLogsListing(
       "/cache/logs",
@@ -200,12 +191,11 @@ describe("readLogsOverview", () => {
   let databaseService: OpenDatabase;
 
   beforeEach(async () => {
-    databaseService = await OpenDatabase.open();
-    holder.service = databaseService;
+    databaseService = await acquireDatabase();
   });
 
   afterEach(async () => {
-    databaseService.close();
+    await releaseDatabase();
     await Dexie.delete(DB_NAME);
   });
 
@@ -293,12 +283,11 @@ describe("readLogsListingMatches", () => {
   let databaseService: OpenDatabase;
 
   beforeEach(async () => {
-    databaseService = await OpenDatabase.open();
-    holder.service = databaseService;
+    databaseService = await acquireDatabase();
   });
 
   afterEach(async () => {
-    databaseService.close();
+    await releaseDatabase();
     await Dexie.delete(DB_NAME);
   });
 

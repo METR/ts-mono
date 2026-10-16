@@ -1,9 +1,4 @@
 {
-  "apps/inspect/src/app_config/resolveBackend.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
   "apps/inspect/src/app_config/resolveBackend.ts": {
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1,
@@ -34,11 +29,6 @@
     },
     "tsmono/no-raw-use-effect": {
       "count": 2
-    }
-  },
-  "apps/inspect/src/app/log-list/listing/databaseListing.test.tsx": {
-    "@typescript-eslint/no-unsafe-type-assertion (file-wide)": {
-      "count": 1
     }
   },
   "apps/inspect/src/app/log-list/listing/useLogsListingQuery.ts": {
@@ -380,11 +370,6 @@
       "undescribed": 1
     }
   },
-  "apps/inspect/src/client/api/vscode/api-vscode.e2e.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
   "apps/inspect/src/client/database/service.ts": {
     "@typescript-eslint/no-floating-promises": {
       "count": 1,
@@ -397,12 +382,6 @@
     },
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
-    }
-  },
-  "apps/inspect/src/client/remote/remotePendingSampleData.test.ts": {
-    "@typescript-eslint/no-base-to-string": {
-      "count": 1,
-      "undescribed": 1
     }
   },
   "apps/inspect/src/client/utils/normalize.ts": {
