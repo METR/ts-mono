@@ -1801,7 +1801,7 @@ export interface components {
          */
         GrepSearchRequest: {
             /** Events */
-            events?: "all" | (("model" | "tool" | "compaction" | "branch" | "approval" | "sentinel" | "sandbox" | "info" | "store" | "logger" | "error" | "span_begin" | "span_end") | string)[] | null;
+            events?: "all" | (("model" | "tool" | "compaction" | "branch" | "approval" | "sentinel" | "sandbox" | "info" | "store" | "logger" | "error" | "input" | "sample_init" | "sample_limit" | "score" | "score_edit" | "state" | "anchor" | "checkpoint" | "interrupt" | "review" | "span_begin" | "span_end") | string)[] | null;
             /**
              * Ignore Case
              * @default true
@@ -2126,7 +2126,7 @@ export interface components {
          */
         LlmSearchRequest: {
             /** Events */
-            events?: "all" | (("model" | "tool" | "compaction" | "branch" | "approval" | "sentinel" | "sandbox" | "info" | "store" | "logger" | "error" | "span_begin" | "span_end") | string)[] | null;
+            events?: "all" | (("model" | "tool" | "compaction" | "branch" | "approval" | "sentinel" | "sandbox" | "info" | "store" | "logger" | "error" | "input" | "sample_init" | "sample_limit" | "score" | "score_edit" | "state" | "anchor" | "checkpoint" | "interrupt" | "review" | "span_begin" | "span_end") | string)[] | null;
             /** Messages */
             messages?: "all" | ("system" | "user" | "assistant" | "tool")[] | null;
             /** Model */
@@ -4095,6 +4095,16 @@ export interface components {
         /**
          * ToolEvent
          * @description Call to a tool.
+         *
+         *     A host tool that `sandbox_agent_bridge(bridged_tools=...)` runs for a
+         *     sandboxed agent is recorded with `metadata["bridge"]`: `server` and `tool`
+         *     (the bridged server and the tool name within it, also the event's
+         *     `function`), `function` (the name the model called it by, or `None`),
+         *     `proposal_id` (the id of the model's proposing tool call, or `None`) and
+         *     `grant` (`"consumed"` when a proposal matched, `"denied"` when the call
+         *     was refused for lack of one, `"exempt"` when a server registered with
+         *     `require_proposal=False` ran it without one, or `None` when the request
+         *     was rejected before that check).
          */
         ToolEvent: {
             /** Agent */
