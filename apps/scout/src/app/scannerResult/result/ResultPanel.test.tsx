@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { type PropsWithChildren } from "react";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   ComponentIconProvider,
@@ -13,7 +13,13 @@ import { ComponentStateProvider } from "@tsmono/react/state";
 import { makeStateHooks, testIcons } from "@tsmono/react/testing";
 import { AsyncData, loading } from "@tsmono/util";
 
-import type { ScanResultDetail } from "../../../api/api";
+import type {
+  InputReferenceError,
+  ScanResultDetail,
+  ScoutApiV2,
+} from "../../../api/api";
+import { apiScoutServer } from "../../../api/api-scout-server";
+import { ApiProvider } from "../../../state/store";
 import {
   createAppConfig,
   createScanResultData,
@@ -37,7 +43,10 @@ const resultData = createScanResultData({
   explanation: "The agent gave up early.",
 });
 
-const renderPanel = (detail: AsyncData<ScanResultDetail>) => {
+const renderPanel = (
+  detail: AsyncData<ScanResultDetail>,
+  api: ScoutApiV2 = apiScoutServer()
+) => {
   server.use(
     http.get("/api/v2/app-config", () =>
       HttpResponse.json<AppConfig>(createAppConfig())
@@ -46,17 +55,21 @@ const renderPanel = (detail: AsyncData<ScanResultDetail>) => {
   const Providers = createTestWrapper();
   render(
     <Providers>
-      <ComponentIconProvider icons={testIcons}>
-        <ComponentStateProvider hooks={makeStateHooks()}>
-          <AppConfigGate>
-            <MemoryRouter>
-              <ComponentNavigationProvider navigation={{ navigate: () => {} }}>
-                <ResultPanel resultData={resultData} detail={detail} />
-              </ComponentNavigationProvider>
-            </MemoryRouter>
-          </AppConfigGate>
-        </ComponentStateProvider>
-      </ComponentIconProvider>
+      <ApiProvider value={api}>
+        <ComponentIconProvider icons={testIcons}>
+          <ComponentStateProvider hooks={makeStateHooks()}>
+            <AppConfigGate>
+              <MemoryRouter>
+                <ComponentNavigationProvider
+                  navigation={{ navigate: () => {} }}
+                >
+                  <ResultPanel resultData={resultData} detail={detail} />
+                </ComponentNavigationProvider>
+              </MemoryRouter>
+            </AppConfigGate>
+          </ComponentStateProvider>
+        </ComponentIconProvider>
+      </ApiProvider>
     </Providers>
   );
 };
@@ -73,5 +86,44 @@ describe("ResultPanel", () => {
     await screen.findByText("The agent gave up early.");
     screen.getByText("Error Loading Input");
     screen.getByText("Internal Server Error");
+  });
+});
+
+const referenceDetail = (
+  inputError: InputReferenceError
+): AsyncData<ScanResultDetail> => ({
+  loading: false,
+  data: {
+    input: { input_type: "transcript", input: null },
+    scanEvents: [],
+    inputStorage: "reference",
+    inputError,
+  },
+});
+
+describe("ResultPanel input stored by reference", () => {
+  it("explains why the input is missing and links to the sample", async () => {
+    const message =
+      "The sample is 412.0 MiB, over this server's 16.0 MiB limit for referenced inputs.";
+    renderPanel(referenceDetail({ reason: "too_large", message }), {
+      ...apiScoutServer(),
+      inputReferenceUrl: (transcriptId) =>
+        `/permalink/sample/${encodeURIComponent(transcriptId)}`,
+    });
+    await screen.findByText("Input stored by reference");
+    screen.getByText(message);
+    expect(
+      screen.getByRole("link", { name: "Open sample" }).getAttribute("href")
+    ).toBe("/permalink/sample/transcript-1");
+    expect(screen.queryByText("Unsupported Input Type")).toBeNull();
+  });
+
+  it("omits the link when the host cannot open samples", async () => {
+    const message =
+      "This result's input is stored by reference, and this server does not resolve references.";
+    renderPanel(referenceDetail({ reason: "not_resolved", message }));
+    await screen.findByText("Input stored by reference");
+    screen.getByText(message);
+    expect(screen.queryByRole("link", { name: "Open sample" })).toBeNull();
   });
 });

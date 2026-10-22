@@ -27,7 +27,12 @@ export const ResultPanel: FC<ResultPanelProps> = ({ resultData, detail }) => (
     ) : detail.loading ? (
       <NoContentsPanel text="Loading input" busy />
     ) : (
-      <ResultBody resultData={resultData} inputData={detail.data.input} />
+      <ResultBody
+        resultData={resultData}
+        inputData={detail.data.input}
+        inputStorage={detail.data.inputStorage}
+        inputError={detail.data.inputError}
+      />
     )}
   </div>
 );
