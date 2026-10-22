@@ -30,9 +30,19 @@ export type ClientStorage = StateStorage;
 
 export type ScalarValue = string | number | boolean | null;
 
+export type InputReferenceReason =
+  "not_resolved" | "forbidden" | "not_found" | "too_large" | "unavailable";
+
+export interface InputReferenceError {
+  reason: InputReferenceReason;
+  message: string;
+}
+
 export interface ScanResultDetail {
   input: ScannerInput;
   scanEvents: Event[];
+  inputStorage?: "inline" | "reference";
+  inputError?: InputReferenceError;
 }
 
 export interface SearchResultScope {
