@@ -6,6 +6,7 @@ import { ChatViewVirtualList } from "@tsmono/inspect-components/chat";
 import { NoContentsPanel } from "@tsmono/react/components";
 import { useChromeNavOwnership } from "@tsmono/react/hooks";
 
+import { InputReferenceError, ScanResultDetail } from "../../../api/api";
 import { useStore } from "../../../state/store";
 import { ScannerInput } from "../../../types/api-types";
 import { ColumnHeader } from "../../components/ColumnHeader";
@@ -19,14 +20,22 @@ import {
   ScanResultData,
 } from "../../types";
 
+import { InputReferenceNotice } from "./InputReferenceNotice";
 import styles from "./ResultBody.module.css";
 
 export interface ResultBodyProps {
   resultData: ScanResultData;
   inputData: ScannerInput;
+  inputStorage?: ScanResultDetail["inputStorage"];
+  inputError?: InputReferenceError;
 }
 
-export const ResultBody: FC<ResultBodyProps> = ({ resultData, inputData }) => {
+export const ResultBody: FC<ResultBodyProps> = ({
+  resultData,
+  inputData,
+  inputStorage,
+  inputError,
+}) => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [searchParams] = useSearchParams();
 
@@ -67,6 +76,8 @@ export const ResultBody: FC<ResultBodyProps> = ({ resultData, inputData }) => {
         <InputRenderer
           resultData={resultData}
           inputData={inputData}
+          inputStorage={inputStorage}
+          inputError={inputError}
           scrollRef={scrollRef}
           initialMessageId={initialMessageId}
           initialEventId={initialEventId}
@@ -84,6 +95,8 @@ interface InputRendererProps {
   className?: string | string[];
   resultData?: ScanResultData;
   inputData: ScannerInput;
+  inputStorage?: ScanResultDetail["inputStorage"];
+  inputError?: InputReferenceError;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   initialMessageId?: string | null;
   initialEventId?: string | null;
@@ -106,6 +119,8 @@ const containerClass = (
 const InputRenderer: FC<InputRendererProps> = ({
   resultData,
   inputData,
+  inputStorage,
+  inputError,
   className,
   scrollRef,
   initialMessageId,
@@ -200,6 +215,13 @@ const InputRenderer: FC<InputRendererProps> = ({
         headroomHidden={headroomHidden}
         onHeadroomSetHidden={onHeadroomSetHidden}
         onHeadroomResetAnchor={onHeadroomResetAnchor}
+      />
+    );
+  } else if (inputStorage === "reference") {
+    return (
+      <InputReferenceNotice
+        transcriptId={resultData?.transcriptId}
+        inputError={inputError}
       />
     );
   } else {
