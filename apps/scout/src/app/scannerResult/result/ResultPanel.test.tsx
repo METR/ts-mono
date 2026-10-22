@@ -25,6 +25,7 @@ import { server } from "../../../test/setup-msw";
 import { createTestWrapper } from "../../../test/test-utils";
 import type { AppConfig } from "../../../types/api-types";
 import { useAppConfigAsync } from "../../server/useAppConfig";
+import type { ScanResultData } from "../../types";
 
 import { ResultPanel } from "./ResultPanel";
 
@@ -37,12 +38,14 @@ const AppConfigGate = ({ children }: PropsWithChildren) => {
 };
 
 const resultData = createScanResultData({
+  uuid: "result-uuid-1",
   explanation: "The agent gave up early.",
 });
 
 const renderPanel = (
   detail: AsyncData<ScanResultDetail>,
-  api: ScoutApiV2 = apiScoutServer()
+  api: ScoutApiV2 = apiScoutServer(),
+  data: ScanResultData = resultData
 ) => {
   server.use(
     http.get("/api/v2/app-config", () =>
@@ -57,7 +60,7 @@ const renderPanel = (
           <AppConfigGate>
             <MemoryRouter>
               <ComponentNavigationProvider navigation={{ navigate: () => {} }}>
-                <ResultPanel resultData={resultData} detail={detail} />
+                <ResultPanel resultData={data} detail={detail} />
               </ComponentNavigationProvider>
             </MemoryRouter>
           </AppConfigGate>
@@ -72,6 +75,13 @@ describe("ResultPanel", () => {
     renderPanel(loading);
     await screen.findByText("The agent gave up early.");
     screen.getByText("Loading input");
+  });
+
+  it("says there is no input for a row without a uuid instead of loading forever", async () => {
+    renderPanel(loading, apiScoutServer(), { ...resultData, uuid: undefined });
+    await screen.findByText("The agent gave up early.");
+    screen.getByText("No input for this result");
+    expect(screen.queryByText("Loading input")).toBeNull();
   });
 
   it("shows why the input failed to load next to the result", async () => {
@@ -118,5 +128,20 @@ describe("ResultPanel input stored by reference", () => {
     await screen.findByText("Input stored by reference");
     screen.getByText(message);
     expect(screen.queryByRole("link", { name: "Open sample" })).toBeNull();
+  });
+});
+
+describe("ResultPanel against a server without input_error", () => {
+  it("falls back to a generic description", async () => {
+    renderPanel({
+      loading: false,
+      data: {
+        input: { input_type: "transcript", input: null },
+        scanEvents: [],
+        inputStorage: "reference",
+      },
+    });
+    await screen.findByText("Input stored by reference");
+    screen.getByText("This server did not resolve the input.");
   });
 });

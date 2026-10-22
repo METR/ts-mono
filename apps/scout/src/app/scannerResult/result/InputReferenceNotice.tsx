@@ -19,7 +19,9 @@ export const InputReferenceNotice: FC<InputReferenceNoticeProps> = ({
   return (
     <NonIdealState
       title="Input stored by reference"
-      description={inputError?.message}
+      description={
+        inputError?.message ?? "This server did not resolve the input."
+      }
       action={
         url ? (
           <a href={url} target="_blank" rel="noreferrer">

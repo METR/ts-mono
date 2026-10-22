@@ -24,6 +24,8 @@ export const ResultPanel: FC<ResultPanelProps> = ({ resultData, detail }) => (
         title="Error Loading Input"
         error={{ message: detail.error.message }}
       />
+    ) : !resultData.uuid ? (
+      <NoContentsPanel text="No input for this result" />
     ) : detail.loading ? (
       <NoContentsPanel text="Loading input" busy />
     ) : (
