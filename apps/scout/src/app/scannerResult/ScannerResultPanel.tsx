@@ -30,9 +30,9 @@ import { useSelectedScanResultData } from "../hooks/useSelectedScanResultData";
 import { useSelectedScanResultDetail } from "../hooks/useSelectedScanResultDetail";
 import { useAppConfig } from "../server/useAppConfig";
 import { useHasTranscript } from "../server/useHasTranscript";
-import { isTranscriptInput, ScanResultData } from "../types";
+import { ScanResultData } from "../types";
 import { getScanDisplayName } from "../utils/scan";
-import { getTranscriptDisplayName } from "../utils/transcript";
+import { formatTaskName } from "../utils/transcript";
 import { useScansDir } from "../utils/useScansDir";
 import { useTranscriptsDir } from "../utils/useTranscriptsDir";
 import { ValidationCaseEditor } from "../validation/components/ValidationCaseEditor";
@@ -177,10 +177,16 @@ export const ScannerResultPanel: FC = () => {
   const inputData = detail.data?.input;
   const detailScanEvents = detail.data?.scanEvents;
 
-  // Set document title with task name and scan location
+  // Set document title with task name and scan location. The task name comes
+  // from the row's columns: a reference row's input has no task_set, or may
+  // not load at all.
   const taskName =
-    inputData && isTranscriptInput(inputData)
-      ? getTranscriptDisplayName(inputData.input)
+    selectedResult?.inputType === "transcript"
+      ? formatTaskName({
+          taskSet: selectedResult.transcriptTaskSet,
+          taskId: selectedResult.transcriptTaskId,
+          taskRepeat: selectedResult.transcriptTaskRepeat,
+        })
       : undefined;
   useDocumentTitle(
     taskName,
