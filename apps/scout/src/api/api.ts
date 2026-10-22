@@ -143,7 +143,9 @@ export interface ScoutApiV2 {
   // api object; this keeps @typescript-eslint/unbound-method satisfied.
   downloadScan?: (scansDir: string, scanPath: string) => Promise<Blob>;
   // Where to view a transcript whose scan input is stored by reference and
-  // could not be shown inline, for hosts that have such a page.
+  // could not be shown inline, for hosts that have such a page. The URL is
+  // rendered as a link href without validation, so the host must build it from
+  // its own routes and encode transcriptId (untrusted row data).
   inputReferenceUrl?: (transcriptId: string) => string | undefined;
 
   storage: ClientStorage;
