@@ -142,6 +142,9 @@ export interface ScoutApiV2 {
   // around as a value (destructured, used as a prop) rather than invoked on the
   // api object; this keeps @typescript-eslint/unbound-method satisfied.
   downloadScan?: (scansDir: string, scanPath: string) => Promise<Blob>;
+  // Where to view a transcript whose scan input is stored by reference and
+  // could not be shown inline, for hosts that have such a page.
+  inputReferenceUrl?: (transcriptId: string) => string | undefined;
 
   storage: ClientStorage;
   capability: "scans" | "workbench";
