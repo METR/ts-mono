@@ -5,12 +5,9 @@ import { type PropsWithChildren } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  ComponentIconProvider,
-  ComponentNavigationProvider,
-} from "@tsmono/react/components";
+import { ComponentNavigationProvider } from "@tsmono/react/components";
 import { ComponentStateProvider } from "@tsmono/react/state";
-import { makeStateHooks, testIcons } from "@tsmono/react/testing";
+import { makeStateHooks } from "@tsmono/react/testing";
 import { AsyncData, loading } from "@tsmono/util";
 
 import type {
@@ -56,19 +53,15 @@ const renderPanel = (
   render(
     <Providers>
       <ApiProvider value={api}>
-        <ComponentIconProvider icons={testIcons}>
-          <ComponentStateProvider hooks={makeStateHooks()}>
-            <AppConfigGate>
-              <MemoryRouter>
-                <ComponentNavigationProvider
-                  navigation={{ navigate: () => {} }}
-                >
-                  <ResultPanel resultData={resultData} detail={detail} />
-                </ComponentNavigationProvider>
-              </MemoryRouter>
-            </AppConfigGate>
-          </ComponentStateProvider>
-        </ComponentIconProvider>
+        <ComponentStateProvider hooks={makeStateHooks()}>
+          <AppConfigGate>
+            <MemoryRouter>
+              <ComponentNavigationProvider navigation={{ navigate: () => {} }}>
+                <ResultPanel resultData={resultData} detail={detail} />
+              </ComponentNavigationProvider>
+            </MemoryRouter>
+          </AppConfigGate>
+        </ComponentStateProvider>
       </ApiProvider>
     </Providers>
   );

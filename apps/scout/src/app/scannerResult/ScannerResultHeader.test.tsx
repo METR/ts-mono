@@ -2,9 +2,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
-import { ComponentIconProvider } from "@tsmono/react/components";
-import { testIcons } from "@tsmono/react/testing";
-
 import {
   createAppConfig,
   createScanResultData,
@@ -24,13 +21,11 @@ const transcriptRow = createScanResultData({
 
 const renderHeader = (collapsed: boolean) =>
   render(
-    <ComponentIconProvider icons={testIcons}>
-      <ScannerResultHeader
-        resultData={transcriptRow}
-        appConfig={createAppConfig()}
-        collapsed={collapsed}
-      />
-    </ComponentIconProvider>
+    <ScannerResultHeader
+      resultData={transcriptRow}
+      appConfig={createAppConfig()}
+      collapsed={collapsed}
+    />
   );
 
 describe("ScannerResultHeader without input data", () => {
