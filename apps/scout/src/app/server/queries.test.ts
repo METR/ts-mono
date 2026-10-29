@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { QueryClient, skipToken } from "@tanstack/react-query";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
+import { encodeBase64Url } from "@tsmono/util";
+
 import { apiScoutServer } from "../../api/api-scout-server";
+import { server } from "../../test/setup-msw";
 
 import {
   isInvalidationTopic,
@@ -69,5 +73,61 @@ describe("scanDataframeDetailQuery", () => {
       uuid: "u",
     });
     expect(queryKey).not.toContain(topicTag("scans"));
+  });
+
+  it("keeps a resolved input fresh but refetches one that failed to resolve", async () => {
+    const params = {
+      scansDir: "/scans",
+      scanPath: "a.scan",
+      scanner: "s",
+      uuid: "u",
+    };
+    const fetchTwice = async (response: Record<string, unknown>) => {
+      let requests = 0;
+      server.use(
+        http.get(
+          `/api/v2/scans/${encodeBase64Url(params.scansDir)}/${encodeBase64Url(params.scanPath)}/s/u`,
+          () => {
+            requests++;
+            return HttpResponse.json(response);
+          }
+        )
+      );
+      // Built after MSW patched fetch, unlike the module-level api.
+      const query = scanDataframeDetailQuery(apiScoutServer(), params);
+      const queryClient = new QueryClient();
+      await queryClient.fetchQuery(query);
+      await queryClient.fetchQuery(query);
+      return requests;
+    };
+    const row = {
+      input_type: "transcript",
+      input_data: null,
+      input_storage: "reference",
+      scan_events: [],
+    };
+
+    expect(
+      await fetchTwice({
+        ...row,
+        input: {
+          transcript_id: "t-1",
+          messages: [],
+          events: [],
+          timelines: [],
+          metadata: {},
+        },
+      })
+    ).toBe(1);
+    expect(
+      await fetchTwice({
+        ...row,
+        input: null,
+        input_error: {
+          reason: "unavailable",
+          message: "Timed out reading the sample.",
+        },
+      })
+    ).toBe(2);
   });
 });

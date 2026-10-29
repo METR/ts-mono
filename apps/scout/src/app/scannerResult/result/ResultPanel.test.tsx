@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { type PropsWithChildren } from "react";
+import { type PropsWithChildren, type ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ComponentNavigationProvider } from "@tsmono/react/components";
 import { ComponentStateProvider } from "@tsmono/react/state";
 import { makeStateHooks } from "@tsmono/react/testing";
-import { AsyncData, loading } from "@tsmono/util";
+import { AsyncData, encodeBase64Url, loading } from "@tsmono/util";
 
 import type {
   InputReferenceError,
@@ -25,6 +25,7 @@ import { server } from "../../../test/setup-msw";
 import { createTestWrapper } from "../../../test/test-utils";
 import type { AppConfig } from "../../../types/api-types";
 import { useAppConfigAsync } from "../../server/useAppConfig";
+import { useScanDataframeDetail } from "../../server/useScanDataframeDetail";
 import type { ScanResultData } from "../../types";
 
 import { ResultPanel } from "./ResultPanel";
@@ -42,10 +43,9 @@ const resultData = createScanResultData({
   explanation: "The agent gave up early.",
 });
 
-const renderPanel = (
-  detail: AsyncData<ScanResultDetail>,
-  api: ScoutApiV2 = apiScoutServer(),
-  data: ScanResultData = resultData
+const renderWithProviders = (
+  panel: ReactNode,
+  api: ScoutApiV2 = apiScoutServer()
 ) => {
   server.use(
     http.get("/api/v2/app-config", () =>
@@ -60,7 +60,7 @@ const renderPanel = (
           <AppConfigGate>
             <MemoryRouter>
               <ComponentNavigationProvider navigation={{ navigate: () => {} }}>
-                <ResultPanel resultData={data} detail={detail} />
+                {panel}
               </ComponentNavigationProvider>
             </MemoryRouter>
           </AppConfigGate>
@@ -69,6 +69,13 @@ const renderPanel = (
     </Providers>
   );
 };
+
+const renderPanel = (
+  detail: AsyncData<ScanResultDetail>,
+  api: ScoutApiV2 = apiScoutServer(),
+  data: ScanResultData = resultData
+) =>
+  renderWithProviders(<ResultPanel resultData={data} detail={detail} />, api);
 
 describe("ResultPanel", () => {
   it("renders the result sidebar while the input is loading", async () => {
@@ -119,6 +126,7 @@ describe("ResultPanel input stored by reference", () => {
       screen.getByRole("link", { name: "Open sample" }).getAttribute("href")
     ).toBe("/permalink/sample/transcript-1");
     expect(screen.queryByText("Unsupported Input Type")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("omits the link when the host cannot open samples", async () => {
@@ -128,6 +136,63 @@ describe("ResultPanel input stored by reference", () => {
     await screen.findByText("Input stored by reference");
     screen.getByText(message);
     expect(screen.queryByRole("link", { name: "Open sample" })).toBeNull();
+  });
+});
+
+describe("ResultPanel retrying a reference the source could not serve", () => {
+  const params = {
+    scansDir: "/scans",
+    scanPath: "scan_id=test-scan",
+    scanner: "interesting",
+    uuid: "result-uuid-1",
+  };
+
+  const LiveResultPanel = () => {
+    const detail = useScanDataframeDetail(params);
+    return <ResultPanel resultData={resultData} detail={detail} />;
+  };
+
+  it("refetches the input and shows it once the source recovers", async () => {
+    const row = {
+      input_type: "transcript",
+      input_data: null,
+      input_storage: "reference",
+      scan_events: [],
+    };
+    const responses = [
+      {
+        ...row,
+        input: null,
+        input_error: {
+          reason: "unavailable",
+          message: "Timed out reading the sample.",
+        },
+      },
+      {
+        ...row,
+        input: {
+          transcript_id: "transcript-1",
+          messages: [],
+          events: [],
+          timelines: [],
+          metadata: {},
+        },
+      },
+    ];
+    let requests = 0;
+    server.use(
+      http.get(
+        `/api/v2/scans/${encodeBase64Url(params.scansDir)}/${encodeBase64Url(params.scanPath)}/${params.scanner}/${params.uuid}`,
+        () => HttpResponse.json(responses[requests++])
+      )
+    );
+
+    renderWithProviders(<LiveResultPanel />);
+    await screen.findByText("Timed out reading the sample.");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await screen.findByText("No transcript input available");
+    expect(requests).toBe(2);
   });
 });
 
