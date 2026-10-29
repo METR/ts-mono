@@ -428,7 +428,12 @@ export const ScannerResultPanel: FC = () => {
       </ScansNavbar>
       <LoadingBar
         loading={
-          scanLoading || resultLoading || detail.loading || hasTranscriptLoading
+          scanLoading ||
+          resultLoading ||
+          // A row without a uuid has no detail to load (skipToken reports
+          // loading).
+          (detail.loading && !!selectedResult?.uuid) ||
+          hasTranscriptLoading
         }
       />
       {/* Untrusted until the result (and so its transcript's trust) loads. */}
