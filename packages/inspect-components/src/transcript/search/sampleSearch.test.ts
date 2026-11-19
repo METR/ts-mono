@@ -2,13 +2,24 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  testApprovalEvent,
   testAssistantMessage,
   testChatCompletionChoice,
   testInfoEvent,
   testModelEvent,
   testModelOutput,
+  testSystemMessage,
+  testToolCall,
+  testToolEvent,
+  testToolMessage,
+  testUserMessage,
 } from "@tsmono/inspect-common/testing";
-import type { Event, ModelEvent } from "@tsmono/inspect-common/types";
+import type {
+  ChatMessage,
+  ChatMessageAssistant,
+  Event,
+  ModelEvent,
+} from "@tsmono/inspect-common/types";
 
 import { TimelineEvent, TimelineSpan } from "../timeline/core";
 import type { SwimlaneRow } from "../timeline/swimlaneRows";
@@ -226,5 +237,155 @@ describe("findAllMatches", () => {
     // Two distinct positions: the `"foo"` literal and the bare `foo`.
     expect(matches).toHaveLength(2);
     expect(matches.map((m) => m.occurrenceIndex)).toEqual([0, 1]);
+  });
+});
+
+describe("findAllMatches: what model call and tool panels draw", () => {
+  const prompt = [
+    testSystemMessage({ content: "Never mention the kumquat." }),
+    testUserMessage({ content: "Count every kumquat." }),
+  ];
+  const args = { cmd: "grep persimmon notes.txt" };
+  const call = testToolCall({
+    id: "call-1",
+    function: "bash",
+    arguments: args,
+  });
+  const step = testAssistantMessage({
+    content: "Looking.",
+    tool_calls: [call],
+  });
+  const result = testToolMessage({
+    content: "one quince found",
+    tool_call_id: call.id,
+    function: "bash",
+  });
+  const modelCall = (
+    uuid: string,
+    input: ChatMessage[],
+    message: ChatMessageAssistant
+  ): ModelEvent =>
+    testModelEvent({
+      uuid,
+      input,
+      output: testModelOutput({
+        choices: [testChatCompletionChoice({ message })],
+      }),
+    });
+  const first = modelCall("m1", prompt, step);
+  const second = modelCall(
+    "m2",
+    [...prompt, step, result],
+    testAssistantMessage({ content: "Done." })
+  );
+  const toolRun = testToolEvent({
+    uuid: "t1",
+    id: call.id,
+    function: "bash",
+    arguments: args,
+    result: "one quince found",
+  });
+  const rows = new Map(["m1", "t1", "m2"].map((id) => [id, "main"]));
+  const matchedEvents = (events: Event[], term: string) =>
+    findAllMatches(events, term, rows).map((match) => match.eventId);
+
+  it("counts the prompt only on the call that draws it", () => {
+    expect(matchedEvents([first, toolRun, second], "kumquat")).toEqual([
+      "m1",
+      "m1",
+    ]);
+  });
+
+  it("leaves a tool call and its result to the tool event that shows them", () => {
+    const events = [first, toolRun, second];
+    expect(matchedEvents(events, "persimmon")).toEqual(["t1"]);
+    expect(matchedEvents(events, "quince")).toEqual(["t1"]);
+  });
+
+  it("counts a tool call and its result that no tool event shows", () => {
+    const events = [first, second];
+    expect(matchedEvents(events, "persimmon")).toEqual(["m1"]);
+    expect(matchedEvents(events, "quince")).toEqual(["m2"]);
+  });
+
+  it("skips an argument's name, which the panel doesn't draw for the call", () => {
+    expect(matchedEvents([first, second], "cmd")).toEqual([]);
+  });
+
+  it("counts a user message that sits before a tool result", () => {
+    const reminded = modelCall(
+      "m2",
+      [
+        ...prompt,
+        step,
+        testUserMessage({ content: "Mind the medlar." }),
+        result,
+      ],
+      testAssistantMessage({ content: "Done." })
+    );
+    expect(matchedEvents([first, toolRun, reminded], "medlar")).toEqual(["m2"]);
+  });
+
+  it("skips a tool event's argument name, which its panel doesn't draw", () => {
+    expect(matchedEvents([first, toolRun, second], "cmd")).toEqual([]);
+  });
+
+  it("counts every argument of a tool whose panel lists them", () => {
+    const lookup = testToolEvent({
+      uuid: "t1",
+      function: "lookup",
+      arguments: { fruit: "medlar" },
+    });
+    expect(matchedEvents([lookup], "fruit")).toEqual(["t1"]);
+    expect(matchedEvents([lookup], "medlar")).toEqual(["t1"]);
+  });
+
+  it("counts a tool event's custom view in place of its arguments", () => {
+    const opened = testToolEvent({
+      uuid: "t1",
+      function: "open_file",
+      arguments: { path: "notes.txt" },
+      view: {
+        title: "Open {{path}}",
+        format: "markdown",
+        content: "Reading {{path}} aloud",
+      },
+    });
+    expect(matchedEvents([opened], "aloud")).toEqual(["t1"]);
+    expect(matchedEvents([opened], "path")).toEqual([]);
+  });
+
+  it("counts a todo list's items, not the fields that hold them", () => {
+    const planned = testToolEvent({
+      uuid: "t1",
+      function: "TodoWrite",
+      arguments: { todos: [{ content: "Buy a medlar", status: "pending" }] },
+    });
+    expect(matchedEvents([planned], "medlar")).toEqual(["t1"]);
+    expect(matchedEvents([planned], "pending")).toEqual([]);
+  });
+
+  // A bridge may run a call under a new id and record the model's own id for
+  // it; only a log that records execution ids pairs the two.
+  const renamedRun = testToolEvent({
+    uuid: "t1",
+    id: "scaffold-1",
+    function: "bash",
+    arguments: args,
+    metadata: { bridge: { proposal_id: call.id } },
+  });
+  it.each([
+    {
+      desc: "leaves a call a bridge renamed to its tool event",
+      events: [first, testApprovalEvent({ execution_id: "run-1" }), renamedRun],
+      expected: ["t1"],
+    },
+    {
+      desc: "counts a renamed call on both events in a log without execution ids",
+      events: [first, renamedRun],
+      expected: ["m1", "t1"],
+    },
+  ])("$desc", ({ events, expected }) => {
+    expect(matchedEvents(events, "persimmon")).toEqual(expected);
   });
 });

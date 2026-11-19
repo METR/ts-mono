@@ -1,9 +1,16 @@
-import type { Content } from "@tsmono/inspect-common/types";
+import type { Content, ToolCallContent } from "@tsmono/inspect-common/types";
 import { isRecord, toTitleCase } from "@tsmono/util";
 
+import {
+  kToolTodoContentType,
+  resolveToolInput,
+  substituteToolCallContent,
+  toToolTodos,
+} from "../chat/tools/tool";
 import { fenced, inlineCode, quoted } from "../content/markdownBlocks";
 
 import { eventTitle } from "./event/utils";
+import { recentInputMessages } from "./recentInputMessages";
 import { formatModifiedCall, formatSuspicion } from "./transform/toolSentinels";
 import type { EventType } from "./types";
 import { EventNode } from "./types";
@@ -68,10 +75,59 @@ const sanitizeStringify = (v: unknown): string => {
   });
 };
 
+/** A sample's tool events, by the ids a model call's panel checks them by. */
+export interface ToolEventIds {
+  /** The events' own ids, which tool results name. */
+  events: ReadonlySet<string>;
+  /** The ids the model's output names those calls by. */
+  proposals: ReadonlySet<string>;
+}
+
+// What a tool block draws for a call: its title, then its custom view or
+// input, or its arguments when it has neither.
+const drawnCallFields = (call: {
+  function: string;
+  arguments: Record<string, unknown>;
+  view?: ToolCallContent | null;
+}): [string, string][] => {
+  const { name, title, functionCall, input, description, contentType } =
+    resolveToolInput(call.function, call.arguments);
+  const view = call.view
+    ? substituteToolCallContent(call.view, call.arguments)
+    : undefined;
+  const displayName = view?.title || title || name;
+  const fields: [string, string][] = [["function", displayName]];
+  const shownInput =
+    contentType === kToolTodoContentType
+      ? toToolTodos(input)
+          .map((todo) => todo.content)
+          .join("\n")
+      : input;
+  const shown = [view?.content, shownInput].filter(
+    (v) => v != null && v !== ""
+  );
+  for (const value of shown) {
+    fields.push([
+      "arguments",
+      typeof value === "string" ? value : sanitizeStringify(value),
+    ]);
+  }
+  if (shown.length === 0 && functionCall !== displayName) {
+    fields.push(["arguments", functionCall]);
+  }
+  if (description) fields.push(["description", description]);
+  return fields;
+};
+
 /**
  * Extracts labeled fields from an event for search and text serialization.
+ * Given `find` (the sample's tool events, as Find passes), a model call and a
+ * tool call yield what their panels draw rather than all they record.
  */
-export const extractEventFields = (event: EventType): [string, string][] => {
+export const extractEventFields = (
+  event: EventType,
+  find?: ToolEventIds
+): [string, string][] => {
   const fields: [string, string][] = [];
 
   switch (event.event) {
@@ -86,13 +142,27 @@ export const extractEventFields = (event: EventType): [string, string][] => {
         for (const text of extractContentText(choice.message.content)) {
           fields.push(["output", text]);
         }
-      }
-      // Extract text from user/system input messages shown in the view
-      for (const msg of modelEvent.input) {
-        if (msg.role === "user" || msg.role === "system") {
-          for (const text of extractContentText(msg.content)) {
-            fields.push([msg.role, text]);
+        if (!find) continue;
+        // The panel draws a call only when no tool event shows it.
+        for (const call of choice.message.tool_calls ?? []) {
+          if (!find.proposals.has(call.id)) {
+            fields.push(...drawnCallFields(call));
           }
+        }
+      }
+      const input = find
+        ? recentInputMessages(modelEvent.input, {
+            // The timeline sets this on its own copy of the event, never on these.
+            agentResultsFiltered: false,
+            hasToolEvents: undefined,
+            toolEventIds: find.events,
+          })
+        : modelEvent.input.filter(
+            (msg) => msg.role === "user" || msg.role === "system"
+          );
+      for (const msg of input) {
+        for (const text of extractContentText(msg.content)) {
+          fields.push([msg.role, text]);
         }
       }
       // API-call errors / tracebacks surfaced on the model event itself
@@ -108,25 +178,29 @@ export const extractEventFields = (event: EventType): [string, string][] => {
 
     case "tool": {
       const toolEvent = event;
-      // Custom tool title (displayed instead of function name)
-      if (toolEvent.view?.title) {
-        const resolvedTitle = toolEvent.view.title.replace(
-          /\{\{(\w+)\}\}/g,
-          (match, key: string) => {
-            if (!Object.hasOwn(toolEvent.arguments, key)) return match;
-            const val =
-              toolEvent.arguments[key as keyof typeof toolEvent.arguments];
-            return typeof val === "string" ? val : JSON.stringify(val);
-          }
-        );
-        fields.push(["title", resolvedTitle]);
+      if (find) {
+        fields.push(...drawnCallFields(toolEvent));
+      } else {
+        // Custom tool title (displayed instead of function name)
+        if (toolEvent.view?.title) {
+          const resolvedTitle = toolEvent.view.title.replace(
+            /\{\{(\w+)\}\}/g,
+            (match, key: string) => {
+              if (!Object.hasOwn(toolEvent.arguments, key)) return match;
+              const val =
+                toolEvent.arguments[key as keyof typeof toolEvent.arguments];
+              return typeof val === "string" ? val : JSON.stringify(val);
+            }
+          );
+          fields.push(["title", resolvedTitle]);
+        }
+        // Tool function name
+        if (toolEvent.function) {
+          fields.push(["function", toolEvent.function]);
+        }
+        // Tool arguments
+        fields.push(["arguments", JSON.stringify(toolEvent.arguments)]);
       }
-      // Tool function name
-      if (toolEvent.function) {
-        fields.push(["function", toolEvent.function]);
-      }
-      // Tool arguments
-      fields.push(["arguments", JSON.stringify(toolEvent.arguments)]);
       // Tool result
       if (toolEvent.result) {
         if (typeof toolEvent.result === "string") {
